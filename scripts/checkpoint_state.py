@@ -31,10 +31,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_STATE_FILE = ".l0-state.json"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 TIER_RE = re.compile(r"^L(?:1|2a|2b|3|4|5)(?:\.\d+[ab]?)*$")  # nested ids like L3.2a allowed
 BASE_ORDER = {"L1": 1, "L2a": 2, "L2b": 3, "L3": 4, "L4": 5, "L5": 6}
 STATUSES = ("in_progress", "awaiting_confirmation", "completed", "rolled_back", "escalated")
+NODE_STATUSES = ("pending", "in_progress", "completed", "failed", "needs_rerun")
 ACTIVE = ("in_progress", "awaiting_confirmation", "rolled_back")
 
 EXIT_ERROR, EXIT_RETRY, EXIT_CORRUPT = 1, 3, 4
@@ -108,6 +109,37 @@ def load_state(path: Path) -> dict:
     state.setdefault("retries", {})
     state.setdefault("max_retries", 2)
     state.setdefault("confirmations", [])
+    state.setdefault("nodes", {})
+    state.setdefault("approved_budget_usd", 0.0)
+    state.setdefault("spent_usd", 0.0)
+
+    # Migrate old tier-based files (schema_version 1/2 with completed_tiers):
+    # node id = tier name, status completed, artifacts=[output], depends_on = previous tier by order
+    if state["completed_tiers"]:
+        sorted_tiers = sorted(
+            state["completed_tiers"].keys(),
+            key=lambda t: (BASE_ORDER.get(t.split(".")[0], 99), t),
+        )
+        prev_t = None
+        for t in sorted_tiers:
+            t_info = state["completed_tiers"][t]
+            output = t_info.get("output") if isinstance(t_info, dict) else None
+            artifacts = [output] if output else []
+            depends_on = [prev_t] if prev_t else []
+            if t not in state["nodes"]:
+                state["nodes"][t] = {
+                    "status": "completed",
+                    "artifacts": artifacts,
+                    "depends_on": depends_on,
+                    "tool": "",
+                    "fallback": [],
+                }
+            else:
+                node = state["nodes"][t]
+                if node.get("status") == "completed" and not node.get("artifacts") and artifacts:
+                    node["artifacts"] = artifacts
+            prev_t = t
+
     return state
 
 
@@ -149,6 +181,7 @@ def cmd_init(path: Path, args: argparse.Namespace) -> None:
         "scope": args.scope, "entry_tier": args.entry, "current_tier": args.entry,
         "status": "in_progress", "locked_anchors": {}, "completed_tiers": {},
         "retries": {}, "max_retries": args.max_retries, "confirmations": [],
+        "nodes": {}, "approved_budget_usd": 0.0, "spent_usd": 0.0,
     }
     save_state(path, state)
     print(f"[L0-State] Initialized pipeline '{args.scope}' at {args.entry} -> {path}")
@@ -174,6 +207,27 @@ def cmd_complete(path: Path, args: argparse.Namespace) -> None:
     if args.next_tier:
         state["current_tier"] = args.next_tier
     state["status"] = args.status
+    sorted_tiers = sorted(
+        state["completed_tiers"].keys(),
+        key=lambda t: (BASE_ORDER.get(t.split(".")[0], 99), t),
+    )
+    idx = sorted_tiers.index(tier)
+    prev_tier = sorted_tiers[idx - 1] if idx > 0 else None
+    if tier not in state["nodes"]:
+        state["nodes"][tier] = {
+            "status": "completed",
+            "artifacts": [args.output] if args.output else [],
+            "depends_on": [prev_tier] if prev_tier else [],
+            "tool": "",
+            "fallback": [],
+        }
+    else:
+        node = state["nodes"][tier]
+        node["status"] = "completed"
+        if args.output and args.output not in node["artifacts"]:
+            node["artifacts"].append(args.output)
+        if prev_tier and prev_tier not in node["depends_on"]:
+            node["depends_on"].append(prev_tier)
     save_state(path, state)
     print(f"[L0-State] Tier {tier} marked complete. Current tier: {state['current_tier']} ({state['status']})")
 
@@ -226,6 +280,9 @@ def cmd_show(path: Path, args: argparse.Namespace) -> None:
     print(f"Completed: {done}")
     print(f"Locked anchors: {anchors}")
     print(f"Retries: {state['retries'] or 'none'} (limit {state['max_retries']} per tier)")
+    if state.get("nodes"):
+        nodes_summary = ", ".join(f"{k}:{v.get('status')}" for k, v in state["nodes"].items())
+        print(f"Nodes: {nodes_summary}")
     if state["status"] == "awaiting_confirmation":
         print(f"NEXT: ask the user for go/no-go before {state['current_tier']}, then run `confirm`.")
     elif state["status"] == "escalated":
@@ -234,6 +291,183 @@ def cmd_show(path: Path, args: argparse.Namespace) -> None:
         print("NEXT: nothing, the pipeline is complete.")
     else:
         print(f"NEXT: continue at {state['current_tier']}.")
+
+
+def cmd_node_add(path: Path, args: argparse.Namespace) -> None:
+    state = load_state(path)
+    node_id = args.id.strip()
+    if not node_id:
+        raise StateError("node id cannot be empty")
+    deps = [d.strip() for d in args.depends_on.split(",") if d.strip()]
+    tool = args.tool.strip()
+    fallback = [f.strip() for f in args.fallback.split(",") if f.strip()]
+    if node_id not in state["nodes"]:
+        state["nodes"][node_id] = {
+            "status": "pending",
+            "artifacts": [],
+            "depends_on": deps,
+            "tool": tool,
+            "fallback": fallback,
+        }
+    else:
+        node = state["nodes"][node_id]
+        node["depends_on"] = deps
+        node["tool"] = tool
+        node["fallback"] = fallback
+    save_state(path, state)
+    print(f"[L0-State] Node '{node_id}' added (status: {state['nodes'][node_id]['status']}).")
+
+
+def cmd_node_complete(path: Path, args: argparse.Namespace) -> None:
+    state = load_state(path)
+    node_id = args.id.strip()
+    if node_id not in state["nodes"]:
+        state["nodes"][node_id] = {
+            "status": "pending",
+            "artifacts": [],
+            "depends_on": [],
+            "tool": "",
+            "fallback": [],
+        }
+    node = state["nodes"][node_id]
+    node["status"] = "completed"
+    for art in args.artifact:
+        for p in art.split(","):
+            p = p.strip()
+            if p and p not in node["artifacts"]:
+                node["artifacts"].append(p)
+    save_state(path, state)
+    print(f"[L0-State] Node '{node_id}' completed. Artifacts: {node['artifacts']}")
+
+
+def cmd_node_fail(path: Path, args: argparse.Namespace) -> None:
+    state = load_state(path)
+    node_id = args.id.strip()
+    if node_id not in state["nodes"]:
+        state["nodes"][node_id] = {
+            "status": "pending",
+            "artifacts": [],
+            "depends_on": [],
+            "tool": "",
+            "fallback": [],
+        }
+    state["nodes"][node_id]["status"] = "failed"
+    save_state(path, state)
+    print(f"[L0-State] Node '{node_id}' marked failed.")
+
+
+def cmd_rerun(path: Path, args: argparse.Namespace) -> None:
+    state = load_state(path)
+    node_id = args.id.strip()
+    if node_id not in state["nodes"]:
+        raise StateError(f"node '{node_id}' not found in state")
+
+    used = state["retries"].get(node_id, 0)
+    if used >= state["max_retries"]:
+        state["status"] = "escalated"
+        save_state(path, state)
+        raise StateError(
+            f"retry limit reached for node '{node_id}' ({used}/{state['max_retries']}). "
+            "Stop and escalate to the user with what failed and what was tried.",
+            EXIT_RETRY,
+        )
+    state["retries"][node_id] = used + 1
+
+    downstream = {node_id}
+    changed = True
+    while changed:
+        changed = False
+        for nid, ninfo in state["nodes"].items():
+            if nid not in downstream:
+                if any(d in downstream for d in ninfo.get("depends_on", [])):
+                    downstream.add(nid)
+                    changed = True
+
+    for nid in downstream:
+        state["nodes"][nid]["status"] = "needs_rerun"
+        state["nodes"][nid]["artifacts"] = []
+
+    state["status"] = "rolled_back"
+    state["last_rerun"] = {
+        "id": node_id,
+        "reason": args.reason or "",
+        "timestamp": _now(),
+        "downstream": sorted(downstream),
+    }
+    save_state(path, state)
+    print(
+        f"[L0-State] Marked node '{node_id}' and downstream nodes ({', '.join(sorted(downstream))}) as needs_rerun "
+        f"(retry {used + 1}/{state['max_retries']})."
+    )
+
+
+def cmd_next_tool(path: Path, args: argparse.Namespace) -> None:
+    state = load_state(path)
+    node_id = args.id.strip()
+    if node_id not in state["nodes"]:
+        raise StateError(f"node '{node_id}' not found in state", EXIT_ERROR)
+    node = state["nodes"][node_id]
+    unavail: set[str] = set()
+    for item in args.unavailable:
+        for t in item.split(","):
+            if t.strip():
+                unavail.add(t.strip())
+    candidates: list[str] = []
+    if node.get("tool"):
+        candidates.append(node["tool"])
+    for fb in node.get("fallback", []):
+        if fb not in candidates:
+            candidates.append(fb)
+    for cand in candidates:
+        if cand not in unavail:
+            print(cand)
+            return
+    raise StateError(
+        f"no available tool for node '{node_id}' (candidates: {candidates}, unavailable: {sorted(unavail)})",
+        EXIT_ERROR,
+    )
+
+
+def cmd_budget(path: Path, args: argparse.Namespace) -> None:
+    state = None
+    if path.exists():
+        try:
+            state = load_state(path)
+        except StateError:
+            pass
+
+    approved = args.approved
+    if approved is None:
+        if state is not None:
+            approved = float(state.get("approved_budget_usd") or (state.get("budget") or {}).get("approved", 0.0))
+        else:
+            approved = 0.0
+
+    spent = args.spent
+    if spent is None:
+        if state is not None:
+            spent = float(state.get("spent_usd") or (state.get("budget") or {}).get("spent", 0.0))
+        else:
+            spent = 0.0
+
+    next_cost = float(args.next_cost if args.next_cost is not None else 0.0)
+    total = spent + next_cost
+
+    if total > approved:
+        raise StateError(
+            f"stop and confirm: spent (${spent:.2f}) + next cost (${next_cost:.2f}) = ${total:.2f} "
+            f"exceeds approved budget (${approved:.2f})",
+            EXIT_RETRY,
+        )
+
+    if state is not None:
+        state["approved_budget_usd"] = approved
+        state["spent_usd"] = spent
+        state.setdefault("budget", {})["approved"] = approved
+        state["budget"]["spent"] = spent
+        save_state(path, state)
+
+    print(f"[L0-State] Budget ok: spent ${spent:.2f} + next ${next_cost:.2f} = ${total:.2f} <= approved ${approved:.2f}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -269,11 +503,50 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("show", help="print the state (or a resume summary with --brief)")
     s.add_argument("--brief", action="store_true")
+
+    s = sub.add_parser("node-add", help="add a DAG node to the state")
+    s.add_argument("--id", required=True, help="unique node identifier")
+    s.add_argument("--depends-on", default="", help="comma-separated dependency node ids")
+    s.add_argument("--tool", default="", help="primary tool for this node")
+    s.add_argument("--fallback", default="", help="comma-separated fallback tools")
+
+    s = sub.add_parser("node-complete", help="mark a node completed and record its artifacts")
+    s.add_argument("--id", required=True, help="node identifier")
+    s.add_argument("--artifact", action="append", default=[], help="artifact path produced by node (repeatable)")
+
+    s = sub.add_parser("node-fail", help="mark a node failed")
+    s.add_argument("--id", required=True, help="node identifier")
+
+    s = sub.add_parser("rerun", help="re-run node and all transitive downstream nodes")
+    s.add_argument("--id", required=True, help="node identifier")
+    s.add_argument("--reason", default="", help="reason for rerun")
+
+    s = sub.add_parser("next-tool", help="print the first available tool from primary + fallbacks")
+    s.add_argument("--id", required=True, help="node identifier")
+    s.add_argument("--unavailable", action="append", default=[], help="comma-separated unavailable tools (repeatable)")
+
+    s = sub.add_parser("budget", help="budget check against approved spend")
+    s.add_argument("--approved", type=float, default=None, help="approved budget in USD")
+    s.add_argument("--spent", type=float, default=None, help="already spent in USD")
+    s.add_argument("--next-cost", type=float, default=0.0, help="next estimated cost in USD")
+
     return p
 
 
-HANDLERS = {"init": cmd_init, "lock": cmd_lock, "complete-tier": cmd_complete,
-            "confirm": cmd_confirm, "rollback": cmd_rollback, "show": cmd_show}
+HANDLERS = {
+    "init": cmd_init,
+    "lock": cmd_lock,
+    "complete-tier": cmd_complete,
+    "confirm": cmd_confirm,
+    "rollback": cmd_rollback,
+    "show": cmd_show,
+    "node-add": cmd_node_add,
+    "node-complete": cmd_node_complete,
+    "node-fail": cmd_node_fail,
+    "rerun": cmd_rerun,
+    "next-tool": cmd_next_tool,
+    "budget": cmd_budget,
+}
 
 
 def main(argv: list[str] | None = None) -> int:

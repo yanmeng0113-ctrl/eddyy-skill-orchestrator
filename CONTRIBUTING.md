@@ -32,8 +32,8 @@ python3 -m unittest discover -s tests -p "test_*.py" -v
 3. Commit, tag and publish:
 
 ```bash
-git add -A && git commit -m "release: v0.4.0"
-git tag -a v0.4.0 -m "v0.4.0"
+git add -A && git commit -m "release: v0.5.0"
+git tag -a v0.5.0 -m "v0.5.0"
 git push origin main --tags
 ```
 

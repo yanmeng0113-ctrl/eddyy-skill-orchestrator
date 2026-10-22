@@ -26,6 +26,13 @@ bash install.sh --target /path/to/your/skills --no-scan  # or install into an ex
 
 Or copy manually: `cp -r eddyy-skill-orchestrator ~/.claude/skills/` (or your agent's skills dir). `SKILL.md` alone is enough; `scripts/` adds the validator, checkpoint tool and scanner. Upgrading with `install.sh` never deletes: the previous install is kept as `eddyy-skill-orchestrator.old-<timestamp>`. Details in [Install](#install-安装).
 
+## What's new in 0.5.0
+
+- **Configured vs. Verified Tool Status**: Tool entries clearly distinguish between mere presence (`configured`), tested readiness (`verified` via live probe/call or `--verified`), and missing commands (`unavailable`). Paid and high-risk operations prioritize verified tools.
+- **Node-Level Checkpoint Resume**: Granular node state (`state["nodes"]`) with DAG dependencies, artifact tracking, and targeted invalidation via `rerun --id X` that clears only downstream artifacts while keeping upstream and parallel nodes intact.
+- **Fallback Tool Switching**: Dynamic resilience with `next-tool --id X --unavailable T,...`, selecting the next eligible tool from registered fallbacks after retries.
+- **Real Artifact Acceptance**: Delivery acceptance strictly checks that real artifacts satisfy L1 requirements — a successful tool invocation is not task completion.
+
 ## Why (为什么需要)
 
 With dozens of flat Skills and MCP tools an agent tends to skip steps (storyboard frames before the character sheet is locked, so faces drift between shots), waste paid compute, or nag the user at every trivial step. This skill adds a thin, explicit plan on top:

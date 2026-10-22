@@ -84,6 +84,17 @@ def _check_body(body: object, errors: list[str], prefix: str, *, top: bool,
     planned = {t for t in planned_ids if t in TIER_ORDER}
     available = planned | set(satisfied)
 
+    node_id_to_tier: dict[str, str] = {}
+    for idx, t in enumerate(tiers):
+        if isinstance(t, dict) and "node_id" in t:
+            nid = t.get("node_id")
+            if not isinstance(nid, str) or not nid.strip():
+                errors.append(f"{prefix}Tier index {idx} 'node_id' must be a non-empty string.")
+            elif nid in node_id_to_tier:
+                errors.append(f"{prefix}Duplicate node_id '{nid}'.")
+            else:
+                node_id_to_tier[nid] = t.get("tier_id")
+
     seen: set[str] = set()
     last_order = 0
     max_sev = 0
@@ -136,17 +147,34 @@ def _check_body(body: object, errors: list[str], prefix: str, *, top: bool,
             else:
                 tool_names = list(tools)
 
+        if "node_id" in tier:
+            nid = tier.get("node_id")
+            if not isinstance(nid, str) or not nid.strip():
+                errors.append(f"{label} 'node_id' must be a non-empty string.")
+
+        if "fallback" in tier:
+            fb = tier.get("fallback")
+            if not isinstance(fb, list):
+                errors.append(f"{label} 'fallback' must be a list of tool names.")
+            elif not all(isinstance(f, str) and f.strip() for f in fb):
+                errors.append(f"{label} 'fallback' must contain non-empty strings only.")
+
         deps = tier.get("depends_on", [])
         if not isinstance(deps, list):
             errors.append(f"{label} 'depends_on' must be a list of tier ids, got {type(deps).__name__}.")
             deps = []
         for dep in deps:
-            if dep not in TIER_ORDER:
+            if dep in TIER_ORDER:
+                if TIER_ORDER[dep] >= TIER_ORDER[tid]:
+                    errors.append(f"Invalid dependency: {tid} cannot depend on same or downstream tier '{dep}'.")
+                elif dep not in available:
+                    errors.append(f"{label} depends on {dep}, which is neither in this plan nor in satisfied_tiers.")
+            elif dep in node_id_to_tier:
+                dep_tier = node_id_to_tier[dep]
+                if dep_tier and dep_tier in TIER_ORDER and TIER_ORDER[dep_tier] >= TIER_ORDER[tid]:
+                    errors.append(f"Invalid dependency: {tid} cannot depend on same or downstream tier '{dep}'.")
+            else:
                 errors.append(f"{label} depends on unknown tier '{dep}'.")
-            elif TIER_ORDER[dep] >= TIER_ORDER[tid]:
-                errors.append(f"Invalid dependency: {tid} cannot depend on same or downstream tier '{dep}'.")
-            elif dep not in available:
-                errors.append(f"{label} depends on {dep}, which is neither in this plan nor in satisfied_tiers.")
 
         rb = tier.get("rollback_target")
         if rb is not None:

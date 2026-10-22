@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -319,6 +320,80 @@ def parse_frontmatter(raw: str) -> dict[str, str] | None:
     return out
 
 
+def _parse_list_field(val: object) -> list[str]:
+    if val is None:
+        return []
+    if isinstance(val, list):
+        return [str(x).strip() for x in val if str(x).strip()]
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return []
+        if val.startswith("[") and val.endswith("]"):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, list):
+                    return [str(x).strip() for x in parsed if str(x).strip()]
+            except (ValueError, json.JSONDecodeError):
+                val = val[1:-1]
+        lines = [line.strip().lstrip("-").strip() for line in val.splitlines() if line.strip()]
+        if len(lines) > 1 or (lines and val.strip().startswith("-")):
+            return [line for line in lines if line]
+        return [x.strip() for x in val.split(",") if x.strip()]
+    return []
+
+
+def detect_cost(text: str, declared: str | None = None) -> str:
+    """Determine cost field ("free", "paid", or "unknown")."""
+    if declared in ("free", "paid", "unknown"):
+        return declared
+    norm = normalize(text)
+    sig = _risk_signals(text, norm)
+    if sig["cost"]:
+        return "paid"
+    return "unknown"
+
+
+def detect_permissions(text: str, declared: object = None) -> list[str]:
+    """Extract permissions risk signals e.g. ["destructive", "external", "paid"]."""
+    if declared:
+        parsed = _parse_list_field(declared)
+        if parsed:
+            return parsed
+    norm = normalize(text)
+    sig = _risk_signals(text, norm)
+    perms: list[str] = []
+    if sig["destructive"]:
+        perms.append("destructive")
+    if sig["external"]:
+        perms.append("external")
+    if sig["cost"]:
+        perms.append("paid")
+    return perms
+
+
+def mark_verified(entry: dict, probe_ok: bool = True) -> dict:
+    """Mark an entry verified if probe_ok is True, else unavailable."""
+    entry["status"] = "verified" if probe_ok else "unavailable"
+    return entry
+
+
+def mark_unavailable(entry: dict) -> dict:
+    """Mark an entry unavailable."""
+    entry["status"] = "unavailable"
+    return entry
+
+
+def is_verified(entry: dict) -> bool:
+    """Return True if the entry has status 'verified'."""
+    return entry.get("status") == "verified"
+
+
+def is_available(entry: dict) -> bool:
+    """Return True if the entry is not 'unavailable'."""
+    return entry.get("status") != "unavailable"
+
+
 def parse_skill_frontmatter(skill_md: Path) -> dict | None:
     try:
         raw = skill_md.read_text(encoding="utf-8", errors="ignore")
@@ -331,12 +406,30 @@ def parse_skill_frontmatter(skill_md: Path) -> dict | None:
     desc = fm.get("description", "")
     if name == "eddyy-skill-orchestrator":
         return None
+    text = f"{name} {desc}"
+    cls = classify_text(text)
+    inputs = _parse_list_field(fm.get("inputs"))
+    outputs = _parse_list_field(fm.get("outputs"))
+    cost = detect_cost(text, declared=fm.get("cost"))
+    permissions = detect_permissions(text, declared=fm.get("permissions"))
+    status = "configured"
+    cmd = fm.get("command")
+    if isinstance(cmd, str) and cmd.strip():
+        cmd_name = cmd.strip().split()[0]
+        if not (shutil.which(cmd_name) or shutil.which(cmd.strip()) or Path(cmd_name).is_file() or Path(cmd.strip()).is_file()):
+            status = "unavailable"
+
     return {
         "name": name,
         "type": "skill",
         "path": str(skill_md),
         "description": desc[:240],
-        **classify_text(f"{name} {desc}"),
+        **cls,
+        "inputs": inputs,
+        "outputs": outputs,
+        "cost": cost,
+        "permissions": permissions,
+        "status": status,
     }
 
 
@@ -445,11 +538,29 @@ def scan_mcp_configs(config_paths: list[Path]) -> list[dict]:
                 if srv_name in seen:
                     continue
                 seen.add(srv_name)
+                text = _classifiable_text(srv_name, srv_cfg)
+                cls = classify_text(text)
+                inputs = _parse_list_field(srv_cfg.get("inputs"))
+                outputs = _parse_list_field(srv_cfg.get("outputs"))
+                cost = detect_cost(text, declared=srv_cfg.get("cost"))
+                permissions = detect_permissions(text, declared=srv_cfg.get("permissions"))
+                status = "configured"
+                cmd = srv_cfg.get("command")
+                if isinstance(cmd, str) and cmd.strip():
+                    cmd_str = cmd.strip()
+                    cmd_bin = cmd_str.split()[0]
+                    if not (shutil.which(cmd_str) or shutil.which(cmd_bin) or Path(cmd_str).is_file() or Path(cmd_bin).is_file()):
+                        status = "unavailable"
                 servers.append({
                     "name": srv_name,
                     "type": "mcp_server",
                     "source_config": str(cfg_path),
-                    **classify_text(_classifiable_text(srv_name, srv_cfg)),
+                    **cls,
+                    "inputs": inputs,
+                    "outputs": outputs,
+                    "cost": cost,
+                    "permissions": permissions,
+                    "status": status,
                 })
     return servers
 
@@ -516,6 +627,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("out", nargs="?", help="write the inventory JSON here instead of stdout")
     ap.add_argument("--classify", metavar="TEXT",
                     help="classify one tool/skill name+description and print the result")
+    ap.add_argument("--verified", action="append", default=[], metavar="NAME",
+                    help="mark tool or skill NAME as verified (real probe succeeded)")
     args = ap.parse_args(argv)
 
     if args.classify is not None:
@@ -526,6 +639,11 @@ def main(argv: list[str] | None = None) -> int:
     roots = default_skill_roots(home, cwd)
     skills = scan_skills(roots)
     mcps = scan_mcp_configs(default_mcp_configs(home, cwd))
+    verified_names = {n.strip() for item in args.verified for n in item.split(",") if n.strip()}
+    if verified_names:
+        for entry in skills + mcps:
+            if entry.get("name") in verified_names:
+                mark_verified(entry, True)
     payload = {
         "Note": ("Advisory heuristics over names/descriptions only. Tools with "
                  "default_gate=probe_required were not recognised: inspect their schema; "

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.0
+
+Node-level DAG checkpoints, verified tool status, fallback switching, and real artifact delivery acceptance.
+
+**Scanner (`scan_inventory.py`)**
+- Each skill and MCP entry now provides structured metadata: `inputs`, `outputs`, `cost` (`"free"` / `"paid"` / `"unknown"`), `permissions` (risk signals e.g. `destructive`, `external`, `paid`), and `status`.
+- Tool readiness states: `status` defaults to `"configured"`, marks `"unavailable"` if commands are missing or probes fail, and transitions to `"verified"` only via `mark_verified(entry, probe_ok)` or CLI option `--verified NAME`.
+- Added helper functions `mark_verified`, `mark_unavailable`, `is_verified`, `is_available`, `detect_cost`, and `detect_permissions`.
+
+**Checkpoint State (`checkpoint_state.py`)**
+- Upgraded schema to version 3 with node-level state tracking: `state["nodes"]` tracks node statuses (`pending`, `in_progress`, `completed`, `failed`, `needs_rerun`), produced artifacts, DAG dependencies, primary tool, and fallbacks.
+- New commands: `node-add`, `node-complete`, `node-fail`, `rerun` (invalidates node and transitive downstream nodes while preserving unrelated nodes), `next-tool` (picks first available tool from primary + fallbacks), and `budget` (exits 3 on budget overrun).
+- Seamless backward compatibility: legacy tier-based checkpoint files (schema version 1/2) automatically migrate to node-level representation on load.
+
+**Pipeline Validator & Schema (`pipeline-schema.json`, `validate_pipeline.py`)**
+- Tier definitions support optional `node_id` and `fallback` arrays.
+- `depends_on` supports referencing upstream node IDs in addition to tier IDs.
+
+**Skill & Workflow Rules (`SKILL.md`)**
+- Route cards must flag unverified tools; paid and high-risk steps prefer verified tools.
+- Automated fallback switching after 2 retries, stopping immediately if budget or authorization is exceeded.
+- Delivery acceptance requires inspecting real artifacts against L1 specifications.
+
 ## 0.4.0
 
 OpenAI Codex support.

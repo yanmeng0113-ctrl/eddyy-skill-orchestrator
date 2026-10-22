@@ -70,10 +70,19 @@
           "minItems": 1,
           "description": "Skill names or MCP tool identifiers assigned to this tier."
         },
+        "node_id": {
+          "type": "string",
+          "description": "Optional unique node identifier for node-level checkpointing and DAG dependencies."
+        },
+        "fallback": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional fallback tools if primary tools are unavailable."
+        },
         "depends_on": {
           "type": "array",
-          "items": { "$ref": "#/definitions/tierId" },
-          "description": "Upstream tiers (planned or satisfied) that must pass handshake before this tier starts."
+          "items": { "type": "string" },
+          "description": "Upstream tiers (planned or satisfied) or node ids that must pass handshake before this tier starts."
         },
         "execution_mode": {
           "type": "string",
