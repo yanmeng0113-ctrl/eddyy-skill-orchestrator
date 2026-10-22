@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-Fixes found by deploying 0.2.0 on a real host (Windows + WorkBuddy session).
+Fixes found by deploying 0.2.0 on a real host (Windows host with an agent session).
 
 **Scanner (`scan_inventory.py`)**
 - Default roots now include `~/.workbuddy/plugins/cache` and `~/.cursor/extensions`: host built-in skills often live in a versioned plugin cache rather than `~/.workbuddy/skills` (this alone missed 22 of 25 session skills during deployment).

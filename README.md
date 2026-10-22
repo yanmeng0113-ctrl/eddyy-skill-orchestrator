@@ -1,11 +1,30 @@
 # Eddyy Skill Orchestrator (`eddyy-skill-orchestrator`)
 
+> **Chaining AI tools goes wrong in boring ways:** steps run in the wrong order, faces drift because the character sheet wasn't locked first, and a paid render or a publish fires before anyone said yes.
+> This Agent Skill makes the agent print a route card first, lock anchors before deriving from them, and stop only where money or irreversible actions are involved.
+>
+> 让 Agent 串联多个 Skill / MCP 时有顺序、有锚点、花钱和发布前先确认。
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B_stdlib_only-yellow)](#running-the-tests-and-scripts)
 
 **A planning layer for agents that have many Skills and MCP tools: order the work, lock what must stay consistent, and pause only where money or irreversible effects are involved. | 面向多 Skill / MCP 场景的总控调度层：排好执行顺序、锁定需要保持一致的锚点，只在涉及花钱或不可逆操作时才暂停确认。**
 
 Follows the open Agent Skills layout (`SKILL.md` plus `references/`, `assets/`, `scripts/`).
+
+<p align="center"><img src="docs/route-card.png" width="900" alt="Example route card for a 30s trailer pipeline: L1 script, L2a character sheet locked, L2b keyframes, L3 timeline, L4 paid render behind cost_confirm, L5 publish behind high_risk_confirm"></p>
+
+<sub>Route card for <a href="assets/example-pipeline.json"><code>assets/example-pipeline.json</code></a>, rendered from the template in <code>SKILL.md</code>.</sub>
+
+## Quick install (快速安装)
+
+```bash
+git clone https://github.com/yanmeng0113-ctrl/eddyy-skill-orchestrator.git
+cd eddyy-skill-orchestrator && bash install.sh            # auto-detects ~/.claude, ~/.agents, ~/.cursor, ~/.codex, ~/.workbuddy skill dirs
+bash install.sh --target /path/to/your/skills --no-scan  # or install into an explicit dir (repeatable)
+```
+
+Or copy manually: `cp -r eddyy-skill-orchestrator ~/.claude/skills/` (or your agent's skills dir). `SKILL.md` alone is enough; `scripts/` adds the validator, checkpoint tool and scanner. Upgrading with `install.sh` never deletes: the previous install is kept as `eddyy-skill-orchestrator.old-<timestamp>`. Details in [Install](#install-安装).
 
 ## Why (为什么需要)
 
@@ -47,7 +66,7 @@ cd eddyy-skill-orchestrator && bash install.sh
 bash install.sh --target /path/to/your/skills      # explicit location, repeatable
 ```
 
-**Via the skills CLI** (works once you have published the repo under your own name):
+**Via the [skills CLI](https://github.com/vercel-labs/skills)** (if you use it):
 
 ```bash
 npx skills add yanmeng0113-ctrl/eddyy-skill-orchestrator
@@ -89,7 +108,8 @@ eddyy-skill-orchestrator/
 ├── evals/evals.json              # 14 behavioural evals incl. near-miss negatives
 ├── tests/                        # unit tests and fixtures
 ├── install.sh   CONTRIBUTING.md   CHANGELOG.md   LICENSE
-└── .github/                      # CI (Python 3.9, 3.11, 3.13) and issue template
+├── docs/route-card.png          # demo image
+└── .github/ISSUE_TEMPLATE/       # issue template
 ```
 
 ## Running the tests and scripts (测试与脚本)
