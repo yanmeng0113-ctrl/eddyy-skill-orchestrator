@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "L0SkillOrchestratorPipeline",
+  "description": "DAG and route-card schema for L0 Skill & MCP tier orchestration (L1-L5). scripts/validate_pipeline.py enforces this shape plus the safety rules; tests/test_validator.py fails if the two drift apart.",
+  "type": "object",
+  "required": ["scope", "entry_tier", "tiers"],
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Concise summary of the global user goal."
+    },
+    "macro_mode": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if a domain pipeline is nested inside a tier via sub_pipeline."
+    },
+    "entry_tier": {
+      "$ref": "#/definitions/tierId",
+      "description": "First tier that still has to run after inspecting user-supplied artifacts."
+    },
+    "satisfied_tiers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/tierId" },
+      "uniqueItems": true,
+      "description": "Tiers the user already supplied (e.g. a finished script). They precede entry_tier and are not listed in tiers."
+    },
+    "ambient_modifiers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "L0-Ambient skills bound to the whole session (tone, brevity, design rules)."
+    },
+    "approved_budget_usd": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0,
+      "description": "Total spend the user pre-approved in the route card. Paid tiers whose cumulative estimate fits inside it may use gate 'auto'."
+    },
+    "max_retries": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5,
+      "default": 2,
+      "description": "How many times a faulty node may be re-run before escalating to the user."
+    },
+    "tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/tier" }
+    }
+  },
+  "definitions": {
+    "tierId": {
+      "type": "string",
+      "enum": ["L1", "L2a", "L2b", "L3", "L4", "L5"]
+    },
+    "gate": {
+      "type": "string",
+      "enum": ["auto", "cost_confirm", "high_risk_confirm"],
+      "description": "auto = proceed; cost_confirm = ask unless within approved_budget_usd; high_risk_confirm = always ask."
+    },
+    "tier": {
+      "type": "object",
+      "required": ["tier_id", "role", "tools", "execution_mode", "gate", "expected_output"],
+      "properties": {
+        "tier_id": { "$ref": "#/definitions/tierId" },
+        "role": { "type": "string", "description": "Functional role of this tier in the current task." },
+        "tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Skill names or MCP tool identifiers assigned to this tier."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/tierId" },
+          "description": "Upstream tiers (planned or satisfied) that must pass handshake before this tier starts."
+        },
+        "execution_mode": {
+          "type": "string",
+          "enum": ["sequential", "parallel"]
+        },
+        "gate": { "$ref": "#/definitions/gate" },
+        "estimated_cost_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated spend of this tier in USD. Required when gate is cost_confirm or when a paid tool runs under gate auto."
+        },
+        "expected_output": {
+          "type": "string",
+          "description": "Verifiable output contract required by downstream tiers."
+        },
+        "rollback_target": {
+          "$ref": "#/definitions/tierId",
+          "description": "Upstream tier to re-run if this tier fails validation."
+        },
+        "sub_pipeline": {
+          "$ref": "#/definitions/subPipeline",
+          "description": "Nested micro-pipeline compressed into this tier. Its gates and costs bubble up."
+        }
+      }
+    },
+    "subPipeline": {
+      "type": "object",
+      "required": ["tiers"],
+      "properties": {
+        "scope": { "type": "string" },
+        "entry_tier": { "$ref": "#/definitions/tierId" },
+        "satisfied_tiers": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/tierId" },
+          "uniqueItems": true
+        },
+        "tiers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/tier" }
+        }
+      }
+    }
+  }
+}

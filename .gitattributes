@@ -1,0 +1,15 @@
+# Keep the repository byte-identical across platforms.
+# install.sh is executed by bash: a CRLF line ending would break the shebang
+# ("bad interpreter"), so shell scripts must stay LF everywhere.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf

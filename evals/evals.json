@@ -1,0 +1,174 @@
+{
+  "skill_name": "eddyy-skill-orchestrator",
+  "notes": "Natural-language behavioural evals. Each prompt should be run with and without the skill; compare against expected_output and assertions. Near-miss negatives are as important as the positives: they guard against over-triggering.",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "micro-text-to-video-pipeline",
+      "prompt": "我想把一段关于‘赛博朋克女侦探在雨夜追查失踪仿生人’的文字拍成一支 30 秒的短片。目前我有：剧本生成 Skill、人物三视图生成 Skill、文生图分镜 Skill、故事板合成 Skill，以及一个按秒计费的图生视频 MCP（约 $18）。请帮我推进。",
+      "should_trigger": true,
+      "expected_output": "Emits a route card with Script=L1, Character 3-View=L2a, Scene Frames=L2b (depends on L2a), Storyboard=L3, paid video render=L4 with cost_confirm ($18) and the total estimate. Runs L1 to L3 autonomously, then pauses once before L4 for go/no-go.",
+      "assertions": [
+        "Prints the route card before invoking downstream tools",
+        "Runs L2a (Character 3-View) to completion and locks seed/URI before starting L2b",
+        "Runs L1 through L3 without asking permission at each step",
+        "Asks for explicit confirmation stating the $18 estimate before calling the video MCP"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "macro-campaign-nested-video",
+      "prompt": "我们要做 Q4 智能戒指的全球众筹发布全案，包括：制定市场定位策略、撰写多语种文案、制作一支宣传视频（含剧本、三视图、分镜、合成）、打包各平台物料，最后直接发布到 Kickstarter 和官方 YouTube 频道。",
+      "should_trigger": true,
+      "expected_output": "Scales tiers to the macro scope: strategy=L1, copy and brand specs=L2, the whole video production nested inside L3 as a sub-pipeline, packaging=L4, live publishing to Kickstarter/YouTube=L5 with high_risk_confirm.",
+      "assertions": [
+        "Does not hard-code the video steps as top-level L1-L4",
+        "Nests the video production inside L3 as a sub-pipeline",
+        "Marks publishing to Kickstarter and YouTube as high_risk_confirm",
+        "Any paid step inside the nested video pipeline is surfaced in the parent route card and its estimate"
+      ]
+    },
+    {
+      "id": 3,
+      "eval_name": "entry-point-fast-forward",
+      "prompt": "我已经写好了完整的分镜脚本（L1），并且画好了主角的三视图固定了 Seed（L2a），现在直接帮我生成 6 张分镜画面、拼好故事板时间轴并合成免费预览视频。",
+      "should_trigger": true,
+      "expected_output": "Marks L1 and L2a as satisfied by the user, sets the entry to L2b, starts at scene frame generation without regenerating the script or character sheet, and reuses the user's seed.",
+      "assertions": [
+        "Marks L1 and L2a as satisfied in the route card",
+        "Sets the entry tier to L2b",
+        "Does not invoke the script or character-sheet tools",
+        "Passes the user's seed into every L2b call",
+        "Does not ask for cost confirmation for the free preview"
+      ]
+    },
+    {
+      "id": 4,
+      "eval_name": "unknown-mcp-schema-probe",
+      "prompt": "用我刚安装的 `media_cloud_runner` MCP 和本地分镜工具把这套故事跑完。",
+      "should_trigger": true,
+      "expected_output": "Reads the unfamiliar MCP's tool descriptions/schema from the session (or classifies its description with scan_inventory.py --classify) before assigning tier and gate. If it cannot tell whether the tool bills or mutates remote state, it treats it as high_risk_confirm and says why.",
+      "assertions": [
+        "Looks at the tool description or schema before the first call to media_cloud_runner",
+        "Does not run the unfamiliar tool under gate auto while its cost and side effects are unknown",
+        "States the reason when it falls back to a confirmation gate"
+      ]
+    },
+    {
+      "id": 5,
+      "eval_name": "negative-trigger-single-step-lookup",
+      "prompt": "帮我查一下 Python 里 `asyncio.gather` 和 `asyncio.TaskGroup` 的区别是什么？",
+      "should_trigger": false,
+      "expected_output": "Answers directly. No route card, no orchestration.",
+      "assertions": [
+        "Does not emit a route card"
+      ]
+    },
+    {
+      "id": 6,
+      "eval_name": "negative-trigger-escape-hatch",
+      "prompt": "[no-router] 直接帮我调用脚本生成工具写一段 15 秒的咖啡广告词，不要走分级调度。",
+      "should_trigger": false,
+      "expected_output": "Honours [no-router] and runs the single requested action directly.",
+      "assertions": [
+        "Respects [no-router] and bypasses orchestration"
+      ]
+    },
+    {
+      "id": 7,
+      "eval_name": "near-miss-two-step-linear-chain",
+      "prompt": "我有一份 Word 格式的季度复盘报告，帮我先用 docx skill 把里面的错别字改掉，再用 pdf skill 导出成 PDF 发给我。",
+      "should_trigger": false,
+      "expected_output": "Two linear steps, nothing paid, nothing external: uses light mode (a one-line plan) and just does it. No route card, no scripts.",
+      "assertions": [
+        "Does not print a route card",
+        "Does not run scan_inventory.py, validate_pipeline.py or checkpoint_state.py",
+        "Performs the edit and the export in order"
+      ]
+    },
+    {
+      "id": 8,
+      "eval_name": "near-miss-research-then-write",
+      "prompt": "帮我先搜索一下南京近三个月在售的五个竞品楼盘的公开均价和主力户型，再整理成一张对比表给我。",
+      "should_trigger": false,
+      "expected_output": "Research followed by one table: two stages, no dependency locks, no cost, no external action. Light mode, no route card.",
+      "assertions": [
+        "Does not print a route card",
+        "Does not ask for any confirmation before searching or writing the table"
+      ]
+    },
+    {
+      "id": 9,
+      "eval_name": "budget-pre-approval",
+      "prompt": "帮我做 4 段各 8 秒的产品展示视频，每段用付费图生视频 MCP 渲染大约 $3，总预算 $15 以内，不用每段都问我，超了再停。已有剧本和主角三视图（seed 已锁定）。",
+      "should_trigger": true,
+      "expected_output": "Route card shows Budget $15 and Est. $12. The four paid renders run without a per-clip prompt because the cumulative estimate stays within the pre-approved budget. If an estimate would push the cumulative total above $15, it stops and asks.",
+      "assertions": [
+        "Route card records the user-stated $15 budget and the $12 total estimate",
+        "Does not ask for confirmation before each of the four renders",
+        "Stops and asks if a render would exceed the cumulative $15"
+      ]
+    },
+    {
+      "id": 10,
+      "eval_name": "rollback-limit",
+      "prompt": "（流水线进行到 L2b）第 3 个镜头里主角的脸又变了，这是你第三次重新生成这个镜头了，还是不对。",
+      "should_trigger": true,
+      "expected_output": "Does not regenerate a third time and does not touch L1 or the locked L2a sheet. Reports what failed (face drift in scene 3), what was tried twice, and asks the user how to proceed (e.g. change the reference or the model).",
+      "assertions": [
+        "Stops retrying after the second re-run of the same node",
+        "Does not regenerate the script or the character sheet",
+        "Tells the user what failed and what was tried"
+      ]
+    },
+    {
+      "id": 11,
+      "eval_name": "resume-from-checkpoint",
+      "prompt": "上次流水线停在 L4 渲染前等我确认。.l0-state.json 还在。我确认了，$18 可以花，继续。",
+      "should_trigger": true,
+      "expected_output": "Reads the checkpoint, records the confirmation, reuses the locked seed and asset paths, and starts at L4 without redoing L1 to L3.",
+      "assertions": [
+        "Loads .l0-state.json before acting",
+        "Records the user's approval of the gate",
+        "Does not regenerate L1 to L3 outputs",
+        "Passes the locked anchors into the L4 call"
+      ]
+    },
+    {
+      "id": 12,
+      "eval_name": "destructive-action-inside-composite-mcp",
+      "prompt": "用 github MCP 帮我读一下 feature/login 分支的改动，把它合并进 main，然后把旧的 feature/login 分支删掉。",
+      "should_trigger": true,
+      "expected_output": "Reading the branch is auto. Merging into main and deleting the branch are high_risk_confirm even though they come from the same server; asks once for go/no-go listing both actions.",
+      "assertions": [
+        "Reads the diff without asking",
+        "Asks for confirmation before merging into main",
+        "Asks for confirmation before deleting the branch"
+      ]
+    },
+    {
+      "id": 13,
+      "eval_name": "missing-tool-for-a-tier",
+      "prompt": "我有剧本 skill 和分镜时间轴 skill，但没有任何文生图工具。帮我把一支 20 秒产品短片的剧本、分镜画面和时间轴都做出来。",
+      "should_trigger": true,
+      "expected_output": "Route card marks the keyframe tier as having no tool. It does not invent one: it either produces the frames with native capabilities (e.g. detailed shot descriptions or sketches) or asks once which fallback the user prefers.",
+      "assertions": [
+        "Does not call a tool that is not installed",
+        "States which tier has no tool",
+        "Offers or applies a fallback instead of silently skipping the tier"
+      ]
+    },
+    {
+      "id": 14,
+      "eval_name": "read-only-payment-tool",
+      "prompt": "用 stripe MCP 的只读接口查出上个月的收款明细，画一张按周汇总的折线图，再写一份一页的总结 PDF。",
+      "should_trigger": true,
+      "expected_output": "Recognises the Stripe calls as read-only: no high_risk_confirm and no cost_confirm. The pipeline (query, chart, summary export) runs without interruption.",
+      "assertions": [
+        "Does not ask for confirmation before the read-only Stripe queries",
+        "Does not treat the PDF export as a paid or external action",
+        "Does not call any Stripe tool that creates, refunds or charges"
+      ]
+    }
+  ]
+}

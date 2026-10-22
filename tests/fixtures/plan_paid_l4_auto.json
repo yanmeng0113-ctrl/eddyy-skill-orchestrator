@@ -1,0 +1,24 @@
+{
+  "scope": "Unsafe plan: paid L4 render under gate auto with no approved budget",
+  "entry_tier": "L1",
+  "tiers": [
+    {
+      "tier_id": "L1",
+      "role": "Script",
+      "tools": ["script-writer"],
+      "execution_mode": "sequential",
+      "gate": "auto",
+      "expected_output": "script"
+    },
+    {
+      "tier_id": "L4",
+      "role": "Paid render",
+      "tools": ["kling.generate_video"],
+      "depends_on": ["L1"],
+      "execution_mode": "sequential",
+      "gate": "auto",
+      "estimated_cost_usd": 18,
+      "expected_output": "clip"
+    }
+  ]
+}

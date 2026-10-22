@@ -1,0 +1,68 @@
+{
+  "scope": "30s cyberpunk detective trailer",
+  "macro_mode": false,
+  "entry_tier": "L1",
+  "ambient_modifiers": [],
+  "approved_budget_usd": 0,
+  "max_retries": 2,
+  "tiers": [
+    {
+      "tier_id": "L1",
+      "role": "Script and scene breakdown",
+      "tools": ["script-writer"],
+      "execution_mode": "sequential",
+      "gate": "auto",
+      "expected_output": "Script with named characters, style constraints and 6 scenes"
+    },
+    {
+      "tier_id": "L2a",
+      "role": "Lock protagonist identity",
+      "tools": ["character-3view"],
+      "depends_on": ["L1"],
+      "execution_mode": "sequential",
+      "gate": "auto",
+      "expected_output": "3-view sheet URI and seed",
+      "rollback_target": "L1"
+    },
+    {
+      "tier_id": "L2b",
+      "role": "Scene keyframes inheriting the locked identity",
+      "tools": ["text-to-image-storyboard"],
+      "depends_on": ["L1", "L2a"],
+      "execution_mode": "parallel",
+      "gate": "auto",
+      "expected_output": "6 keyframes that match the 3-view sheet",
+      "rollback_target": "L2a"
+    },
+    {
+      "tier_id": "L3",
+      "role": "Storyboard timeline",
+      "tools": ["storyboard-timeline"],
+      "depends_on": ["L2b"],
+      "execution_mode": "sequential",
+      "gate": "auto",
+      "expected_output": "Timeline with zero missing references",
+      "rollback_target": "L2b"
+    },
+    {
+      "tier_id": "L4",
+      "role": "Paid image-to-video render",
+      "tools": ["kling.generate_video"],
+      "depends_on": ["L3"],
+      "execution_mode": "sequential",
+      "gate": "cost_confirm",
+      "estimated_cost_usd": 18,
+      "expected_output": "30s master clip",
+      "rollback_target": "L3"
+    },
+    {
+      "tier_id": "L5",
+      "role": "Publish to the channel",
+      "tools": ["youtube_upload_video"],
+      "depends_on": ["L4"],
+      "execution_mode": "sequential",
+      "gate": "high_risk_confirm",
+      "expected_output": "Public video URL"
+    }
+  ]
+}

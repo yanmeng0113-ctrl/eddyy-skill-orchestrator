@@ -1,0 +1,34 @@
+name: Submit Unrecognized Skill / MCP Rule (提交新工具分级规则)
+description: Report a Skill or MCP server that was misclassified or needs a new domain rule.
+title: "[Tool-Rule]: <Skill or MCP Name>"
+labels: ["tier-rule", "enhancement"]
+body:
+  - type: input
+    id: tool_name
+    attributes:
+      label: Skill or MCP Name (工具名称)
+      placeholder: e.g., comfyui-mcp or 某某分镜助手
+    validations:
+      required: true
+  - type: textarea
+    id: tool_desc
+    attributes:
+      label: Tool Description / Functions (工具描述或子函数列表)
+      placeholder: Paste the SKILL.md description or MCP tool names here.
+    validations:
+      required: true
+  - type: dropdown
+    id: expected_tier
+    attributes:
+      label: Expected Tier (期望归属层级)
+      options:
+        - L0-Ambient (Global Style / Persona Modifier)
+        - L1 (Blueprint / Research / Architecture)
+        - L2a (Anchor Asset / Character 3-View / Schema Lock)
+        - L2b (Derived Atomic Asset / Image / Audio / Code Module)
+        - L3 (Structural Assembly / Storyboard / Lip-Sync / Integration)
+        - L4 (Heavy Synthesis / Video Render / Full Build)
+        - L5 (External Delivery / Live Deploy / Payment)
+        - Multi-Tier Composite (Needs Function-Level Splitting)
+    validations:
+      required: true
