@@ -457,6 +457,25 @@ def scan_mcp_configs(config_paths: list[Path]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
+def _repo_agents_skill_dirs(cwd: Path) -> list[Path]:
+    """Codex REPO scope: .agents/skills in every dir from cwd up to the git root.
+
+    cwd itself is listed by default_skill_roots; this adds the parents, and only
+    when cwd is inside a git repository (no repo -> nothing extra).
+    """
+    for anc in [cwd, *cwd.parents]:
+        if (anc / ".git").exists():
+            break
+    else:
+        return []
+    dirs = []
+    for parent in cwd.parents:
+        dirs.append(parent / ".agents" / "skills")
+        if parent == anc:
+            break
+    return dirs if anc != cwd else []
+
+
 def default_skill_roots(home: Path, cwd: Path) -> list[Path]:
     codex_skills = (
         Path(os.environ["CODEX_HOME"]) / "skills"
@@ -464,10 +483,12 @@ def default_skill_roots(home: Path, cwd: Path) -> list[Path]:
         else home / ".codex" / "skills"
     )
     roots = [
+        *_repo_agents_skill_dirs(cwd),
         cwd / "skills", cwd / ".claude" / "skills", cwd / ".agents" / "skills",
         cwd / ".workbuddy" / "skills",
         home / ".claude" / "skills", home / ".agents" / "skills", home / ".workbuddy" / "skills",
-        codex_skills,
+        codex_skills,  # legacy user dir; also holds Codex's bundled skills in .system/
+        Path("/etc/codex/skills"),  # Codex ADMIN scope
         # Host plugin caches: built-in session skills often live under a
         # versioned cache directory instead of ~/.workbuddy/skills.
         home / ".workbuddy" / "plugins" / "cache",

@@ -79,6 +79,6 @@ Tick `[x]` as tiers pass their handshake. Drop rows the task does not need.
 
 - `references/tier-mapping-guide.md`: read when mapping an unfamiliar domain or composite MCP, nesting pipelines, or checking handshake criteria.
 - `assets/pipeline-schema.json`, `assets/example-pipeline.json`: plan format for the validator.
-- `scripts/scan_inventory.py [out.json]` and `--classify "<text>"`: advisory tier and gate hints. Reads the default roots plus anything in `$L0_SKILL_ROOTS` (separator: `os.pathsep`); hosts whose skills are not on disk can be indexed via a directory of manifest stubs.
+- `scripts/scan_inventory.py [out.json]` and `--classify "<text>"`: advisory tier and gate hints. Reads the default roots (Claude Code, `~/.agents`, Cursor, WorkBuddy and OpenAI Codex: `.agents/skills` from cwd up to the git root, `~/.agents/skills`, `$CODEX_HOME/skills` (default `~/.codex/skills`), `/etc/codex/skills`; Codex MCP servers from `~/.codex/config.toml` and `./.codex/config.toml`) plus anything in `$L0_SKILL_ROOTS` (separator: `os.pathsep`); hosts whose skills are not on disk can be indexed via a directory of manifest stubs.
 - `scripts/validate_pipeline.py <plan.json>`: checks order, dependencies, the L2a/L2b lock and the gates.
 - `scripts/checkpoint_state.py init|lock|complete-tier|confirm|rollback|show`: state in `.l0-state.json` (use `--file` per project).

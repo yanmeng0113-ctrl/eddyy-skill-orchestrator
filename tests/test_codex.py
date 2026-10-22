@@ -88,6 +88,30 @@ class TestCodexSkillRoots(unittest.TestCase):
             self.assertEqual(by_name["custom-codex-skill"]["path"], str(skill_dir / "SKILL.md"))
 
 
+class TestCodexRepoAndAdminRoots(unittest.TestCase):
+    def test_parent_agents_skills_up_to_git_root(self):
+        with tempfile.TemporaryDirectory() as t:
+            root = Path(t) / "repo"
+            sub = root / "svc" / "mod"
+            sub.mkdir(parents=True)
+            (root / ".git").mkdir()
+            roots = default_skill_roots(Path(t) / "home", sub)
+            self.assertIn(root / ".agents" / "skills", roots)
+            self.assertIn(root / "svc" / ".agents" / "skills", roots)
+            self.assertNotIn(Path(t) / ".agents" / "skills", roots)
+
+    def test_no_parent_dirs_outside_git(self):
+        with tempfile.TemporaryDirectory() as t:
+            sub = Path(t) / "a" / "b"
+            sub.mkdir(parents=True)
+            roots = default_skill_roots(Path(t) / "home", sub)
+            self.assertNotIn(Path(t) / "a" / ".agents" / "skills", roots)
+
+    def test_admin_root_listed(self):
+        roots = default_skill_roots(Path("/nonexistent-home"), Path("/nonexistent-cwd"))
+        self.assertIn(Path("/etc/codex/skills"), roots)
+
+
 class TestCodexMcpConfigs(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -253,6 +277,39 @@ env = {{ CODEX_API_KEY = "{secret_token}", DANGER_FLAG = "{danger_command}" }}
         self.assertFalse(srv["external_mutation_risk"])
         self.assertNotEqual(srv["default_gate"], "high_risk_confirm")
         self.assertEqual(srv["evidence"]["risk"], [])
+
+    def test_http_auth_fields_never_leak(self):
+        cfg = self.cwd / "config.toml"
+        cfg.write_text(
+            """
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp?token=QUERYSECRET"
+bearer_token_env_var = "FIGMA_OAUTH_TOKEN"
+http_headers = { "X-Api-Key" = "HEADERSECRET-delete-everything" }
+env_http_headers = { "X-Other" = "OTHER_ENV_NAME" }
+
+[mcp_servers.figma.oauth]
+client_id = "cid"
+client_secret = "OAUTHSECRET"
+
+[mcp_servers.ctx]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+env_vars = ["LOCAL_TOKEN"]
+
+[mcp_servers.ctx.env]
+MY_ENV_VAR = "ENVSECRET-force-push"
+""",
+            encoding="utf-8",
+        )
+        out = scan_mcp_configs([cfg])
+        self.assertEqual({s["name"] for s in out}, {"figma", "ctx"})
+        dumped = json.dumps(out)
+        for needle in ["QUERYSECRET", "FIGMA_OAUTH_TOKEN", "HEADERSECRET", "OTHER_ENV_NAME",
+                       "OAUTHSECRET", "LOCAL_TOKEN", "ENVSECRET"]:
+            self.assertNotIn(needle, dumped)
+        for srv in out:
+            self.assertFalse(srv["external_mutation_risk"], srv)
 
     def test_malformed_toml_skipped_gracefully(self):
         bad_cfg = self.cwd / "config.toml"

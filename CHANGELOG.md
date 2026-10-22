@@ -5,13 +5,14 @@
 OpenAI Codex support.
 
 **Scanner (`scan_inventory.py`)**
-- Default skill roots include `~/.codex/skills`, or `$CODEX_HOME/skills` when `CODEX_HOME` is set (an empty value falls back to the default).
+- Default skill roots follow the Codex docs (developers.openai.com/codex/skills, checked 2026-10-22): `.agents/skills` in every directory from cwd up to the git root (REPO scope), `~/.agents/skills` (USER, already scanned), `/etc/codex/skills` (ADMIN).
+- Also `$CODEX_HOME/skills` (default `~/.codex/skills`; empty `CODEX_HOME` falls back), which holds Codex's bundled `.system` skills and is where its skill-installer writes.
 - MCP scanning reads Codex TOML configs: `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and project-level `./.codex/config.toml`, parsing `[mcp_servers.<name>]` tables. Same rule as JSON: only name, `command`, `args` and URL host are classified; `env`/headers never reach classification or output.
 - Uses stdlib `tomllib` (Python 3.11+); on older Pythons or on a parse error the TOML file is skipped gracefully.
 - MCP entries whose config is not a table/object are now skipped.
 
 **Tests**
-- New `tests/test_codex.py`: Codex skills dir, `CODEX_HOME`, TOML parsing (command/args/url, project vs user precedence, malformed file, `tomllib` missing) and an `env` secret that must not leak into output.
+- New `tests/test_codex.py`: Codex skills dir, `CODEX_HOME`, TOML parsing (command/args/url, project vs user precedence, malformed file, `tomllib` missing) an `env` secret that must not leak into output, and HTTP auth fields (`http_headers`, `env_http_headers`, `bearer_token_env_var`, `oauth`, `env_vars`, URL query) that must not leak either. Repo-scope and admin roots.
 
 ## 0.3.0
 
