@@ -27,6 +27,11 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+try:
+    import tomllib
+except ImportError:
+    tomllib = None  # type: ignore[assignment]
+
 # --------------------------------------------------------------------------- #
 # Normalisation and pattern helpers
 # --------------------------------------------------------------------------- #
@@ -404,6 +409,9 @@ def _server_dicts(data: dict) -> list[dict]:
     top = data.get("mcpServers") or (data.get("mcp") or {}).get("servers")
     if isinstance(top, dict):
         dicts.append(top)
+    codex_top = data.get("mcp_servers")
+    if isinstance(codex_top, dict):
+        dicts.append(codex_top)
     projects = data.get("projects")  # ~/.claude.json keeps per-project servers here
     if isinstance(projects, dict):
         for proj in projects.values():
@@ -419,13 +427,21 @@ def scan_mcp_configs(config_paths: list[Path]) -> list[dict]:
         if not cfg_path.exists():
             continue
         try:
-            data = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
+            raw = cfg_path.read_text(encoding="utf-8", errors="ignore")
+            if cfg_path.suffix.lower() == ".toml":
+                if tomllib is None:
+                    continue
+                data = tomllib.loads(raw)
+            else:
+                data = json.loads(raw)
         except (OSError, ValueError):
             continue
         if not isinstance(data, dict):
             continue
         for mcp_dict in _server_dicts(data):
             for srv_name, srv_cfg in mcp_dict.items():
+                if not isinstance(srv_cfg, dict):
+                    continue
                 if srv_name in seen:
                     continue
                 seen.add(srv_name)
@@ -442,10 +458,16 @@ def scan_mcp_configs(config_paths: list[Path]) -> list[dict]:
 # CLI
 # --------------------------------------------------------------------------- #
 def default_skill_roots(home: Path, cwd: Path) -> list[Path]:
+    codex_skills = (
+        Path(os.environ["CODEX_HOME"]) / "skills"
+        if os.environ.get("CODEX_HOME")
+        else home / ".codex" / "skills"
+    )
     roots = [
         cwd / "skills", cwd / ".claude" / "skills", cwd / ".agents" / "skills",
         cwd / ".workbuddy" / "skills",
         home / ".claude" / "skills", home / ".agents" / "skills", home / ".workbuddy" / "skills",
+        codex_skills,
         # Host plugin caches: built-in session skills often live under a
         # versioned cache directory instead of ~/.workbuddy/skills.
         home / ".workbuddy" / "plugins" / "cache",
@@ -457,8 +479,15 @@ def default_skill_roots(home: Path, cwd: Path) -> list[Path]:
 
 
 def default_mcp_configs(home: Path, cwd: Path) -> list[Path]:
-    return [cwd / ".mcp.json", cwd / ".cursor" / "mcp.json",
-            home / ".claude.json", home / ".cursor" / "mcp.json"]
+    codex_cfg = (
+        Path(os.environ["CODEX_HOME"]) / "config.toml"
+        if os.environ.get("CODEX_HOME")
+        else home / ".codex" / "config.toml"
+    )
+    return [
+        cwd / ".mcp.json", cwd / ".cursor" / "mcp.json", cwd / ".codex" / "config.toml",
+        home / ".claude.json", home / ".cursor" / "mcp.json", codex_cfg,
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:

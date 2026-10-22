@@ -76,9 +76,13 @@ npx skills add yanmeng0113-ctrl/eddyy-skill-orchestrator
 
 **Upgrades never delete.** `install.sh` stages the new version, renames the previous install to `eddyy-skill-orchestrator.old-<timestamp>` and moves the staged copy into place. Nothing is removed, so the installer cannot block on a host that puts `rm` behind an approval prompt, and you can roll back by moving the kept directory back. Delete the kept directory yourself when you no longer need it.
 
+### Compatibility (兼容性)
+
+Works with any host that loads Agent Skills: Claude Code, Cursor, WorkBuddy, `~/.agents`, and **OpenAI Codex**. For Codex the scanner reads skills from `~/.codex/skills` (or `$CODEX_HOME/skills`) and MCP servers from the `[mcp_servers.<name>]` tables in `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and the project-level `.codex/config.toml`. TOML parsing uses stdlib `tomllib` (Python 3.11+); on 3.9/3.10 the Codex TOML files are skipped silently and everything else still works. As for JSON configs, only `command`, `args` and the URL host are classified; `env` and headers are never read into the output.
+
 ### If the scanner misses your skills (扫描不到宿主技能时)
 
-`scripts/scan_inventory.py` reads a fixed set of roots: `./skills`, `~/.claude/skills`, `~/.agents/skills`, `~/.workbuddy/skills`, `~/.workbuddy/plugins/cache`, `~/.cursor/extensions` plus anything in **`L0_SKILL_ROOTS`**. Hosts that keep their skills somewhere else (or expose them only inside the session) are invisible to a file scan — point the scanner at the right directory, or at a directory of *manifest stubs* (small SKILL.md pointer files carrying the real `name` and `description`, so the classifier still works):
+`scripts/scan_inventory.py` reads a fixed set of roots: `./skills`, `~/.claude/skills`, `~/.agents/skills`, `~/.workbuddy/skills`, `~/.codex/skills` (or `$CODEX_HOME/skills`), `~/.workbuddy/plugins/cache`, `~/.cursor/extensions` plus anything in **`L0_SKILL_ROOTS`**. Hosts that keep their skills somewhere else (or expose them only inside the session) are invisible to a file scan — point the scanner at the right directory, or at a directory of *manifest stubs* (small SKILL.md pointer files carrying the real `name` and `description`, so the classifier still works):
 
 ```bash
 L0_SKILL_ROOTS="/path/to/skills" python3 scripts/scan_inventory.py inventory.json

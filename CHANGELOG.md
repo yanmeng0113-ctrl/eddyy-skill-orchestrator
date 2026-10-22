@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+OpenAI Codex support.
+
+**Scanner (`scan_inventory.py`)**
+- Default skill roots include `~/.codex/skills`, or `$CODEX_HOME/skills` when `CODEX_HOME` is set (an empty value falls back to the default).
+- MCP scanning reads Codex TOML configs: `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`) and project-level `./.codex/config.toml`, parsing `[mcp_servers.<name>]` tables. Same rule as JSON: only name, `command`, `args` and URL host are classified; `env`/headers never reach classification or output.
+- Uses stdlib `tomllib` (Python 3.11+); on older Pythons or on a parse error the TOML file is skipped gracefully.
+- MCP entries whose config is not a table/object are now skipped.
+
+**Tests**
+- New `tests/test_codex.py`: Codex skills dir, `CODEX_HOME`, TOML parsing (command/args/url, project vs user precedence, malformed file, `tomllib` missing) and an `env` secret that must not leak into output.
+
 ## 0.3.0
 
 Fixes found by deploying 0.2.0 on a real host (Windows host with an agent session).
