@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # bash everywhere: the Windows runner defaults to PowerShell, and the
+        # smoke-test steps below use POSIX syntax.
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.11", "3.13"]
+        exclude:
+          # 3.9 is not available on the latest Windows images; keep Linux as the
+          # oldest-version gate.
+          - os: windows-latest
+            python-version: "3.9"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit and regression tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Installer syntax check
+        shell: bash
+        run: bash -n install.sh
+
+      - name: Scanner CLI smoke test
+        run: |
+          python scripts/scan_inventory.py "$RUNNER_TEMP/inventory.json"
+          python scripts/scan_inventory.py --classify "git push --force origin main" | grep -q high_risk_confirm
+
+      - name: Validator accepts the example plan and rejects an unsafe one
+        run: |
+          python scripts/validate_pipeline.py assets/example-pipeline.json
+          if python scripts/validate_pipeline.py tests/fixtures/plan_paid_l4_auto.json; then
+            echo "validator should have rejected the unsafe plan"; exit 1
+          fi
+
+      - name: Checkpoint CLI smoke test
+        run: |
+          f="$RUNNER_TEMP/state.json"
+          python scripts/checkpoint_state.py --file "$f" init --scope "CI smoke test" --entry L1
+          python scripts/checkpoint_state.py --file "$f" lock --key seed --value 42
+          python scripts/checkpoint_state.py --file "$f" show --brief
