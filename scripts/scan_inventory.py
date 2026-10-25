@@ -433,13 +433,69 @@ def parse_skill_frontmatter(skill_md: Path) -> dict | None:
     }
 
 
+def _iter_skill_md_files(root: Path) -> list[Path]:
+    """Find SKILL.md under root, following directory symlinks safely.
+
+    ``Path.rglob`` does not descend into symlinked directories, which breaks
+    common "custom-skills -> real dir" installs. We walk with followlinks and
+    skip already-seen directory inodes so a symlink loop cannot hang. Files are
+    de-duplicated by resolved path so two links to the same skill count once.
+    """
+    if not root.exists():
+        return []
+    found: list[Path] = []
+    seen_dirs: set[tuple[int, int]] = set()
+    seen_files: set[str] = set()
+
+    def _dir_key(path: Path) -> tuple[int, int] | None:
+        try:
+            st = path.stat()
+        except OSError:
+            return None
+        return (st.st_dev, st.st_ino)
+
+    start = root
+    start_key = _dir_key(start)
+    if start_key is not None:
+        seen_dirs.add(start_key)
+
+    for dirpath, dirnames, filenames in os.walk(start, followlinks=True):
+        current = Path(dirpath)
+        # Prune children that would re-enter an already-visited inode (loop).
+        keep: list[str] = []
+        for name in dirnames:
+            child = current / name
+            key = _dir_key(child)
+            if key is None:
+                continue
+            if key in seen_dirs:
+                continue
+            seen_dirs.add(key)
+            keep.append(name)
+        dirnames[:] = keep
+
+        if "SKILL.md" in filenames:
+            skill_md = current / "SKILL.md"
+            try:
+                resolved = str(skill_md.resolve())
+            except OSError:
+                resolved = str(skill_md)
+            if resolved in seen_files:
+                continue
+            seen_files.add(resolved)
+            found.append(skill_md)
+
+    return sorted(found)
+
+
 def scan_skills(roots: list[Path]) -> list[dict]:
     """Index SKILL.md files under the given roots.
 
-    Deduplicates by skill name. Plugin caches keep several installed versions
-    side by side, so among same-name candidates the newest SKILL.md wins
-    (mtime, falling back to path order) and every loser is recorded so the
-    caller can warn instead of silently shadowing a skill.
+    Follows directory symlinks (common for custom-skills installs). Deduplicates
+    by resolved path first, then by skill name. Plugin caches keep several
+    installed versions side by side, so among same-name candidates the newest
+    SKILL.md wins (mtime, falling back to path order) and every loser is
+    recorded so the caller can warn instead of silently shadowing a skill.
     """
     found: list[dict] = []
     candidates: dict[str, list[dict]] = {}
@@ -447,7 +503,7 @@ def scan_skills(roots: list[Path]) -> list[dict]:
     for root in roots:
         if not root.exists():
             continue
-        for skill_md in sorted(root.rglob("SKILL.md")):
+        for skill_md in _iter_skill_md_files(root):
             info = parse_skill_frontmatter(skill_md)
             if not info:
                 continue
