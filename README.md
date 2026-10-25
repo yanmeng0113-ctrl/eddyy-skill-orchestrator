@@ -10,6 +10,8 @@
 
 **A planning layer for agents that have many Skills and MCP tools: order the work, lock what must stay consistent, and pause only where money or irreversible effects are involved. | 面向多 Skill / MCP 场景的总控调度层：排好执行顺序、锁定需要保持一致的锚点，只在涉及花钱或不可逆操作时才暂停确认。**
 
+**One-liner:** `npx skills add yanmeng0113-ctrl/eddyy-skill-orchestrator` · or `git clone … && bash install.sh` · hosts: Claude Code / Cursor / Codex / WorkBuddy / `~/.agents`
+
 Follows the open Agent Skills layout (`SKILL.md` plus `references/`, `assets/`, `scripts/`).
 
 <p align="center"><img src="docs/route-card.png" width="900" alt="Example route card for a 30s trailer pipeline: L1 script, L2a character sheet locked, L2b keyframes, L3 timeline, L4 paid render behind cost_confirm, L5 publish behind high_risk_confirm"></p>
@@ -25,6 +27,42 @@ bash install.sh --target /path/to/your/skills --no-scan  # or install into an ex
 ```
 
 Or copy manually: `cp -r eddyy-skill-orchestrator ~/.claude/skills/` (or your agent's skills dir). `SKILL.md` alone is enough; `scripts/` adds the validator, checkpoint tool and scanner. Upgrading with `install.sh` never deletes: the previous install is kept as `eddyy-skill-orchestrator.old-<timestamp>`. Details in [Install](#install-安装).
+
+
+## 60-second demo (一分钟上手)
+
+Install, classify a risky request, and validate the example plan:
+
+```bash
+git clone https://github.com/yanmeng0113-ctrl/eddyy-skill-orchestrator.git
+cd eddyy-skill-orchestrator && bash install.sh
+python3 scripts/scan_inventory.py --classify "render a paid Kling video then publish to YouTube"
+python3 scripts/validate_pipeline.py assets/example-pipeline.json
+```
+
+Expected output (abridged):
+
+```text
+$ bash install.sh --target ~/.claude/skills --no-scan
+Installing eddyy-skill-orchestrator ...
+  [ok] ~/.claude/skills/eddyy-skill-orchestrator
+Done. Installed into 1 location(s).
+
+$ python3 scripts/scan_inventory.py --classify "render a paid Kling video then publish to YouTube"
+{
+  "candidate_tiers": ["L4", "L5"],
+  "default_gate": "high_risk_confirm",
+  "cost_sensitive": true,
+  "external_mutation_risk": true
+}
+
+$ python3 scripts/validate_pipeline.py assets/example-pipeline.json
+[L0-Validator] PASSED: '30s cyberpunk detective trailer' (Entry: L1)
+```
+
+What you get next: the agent prints a **route card** before tools run (see the image above), locks L2a anchors before L2b assets, and only pauses on `cost_confirm` / `high_risk_confirm`.
+
+Prefer a zip? Grab the latest release asset and copy the folder into your skills dir — no git required.
 
 ## What's new in 0.5.1
 
