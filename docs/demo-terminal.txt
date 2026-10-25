@@ -1,0 +1,32 @@
+$ git clone https://github.com/yanmeng0113-ctrl/eddyy-skill-orchestrator.git && cd eddyy-skill-orchestrator
+$ bash install.sh --target /tmp/demo --no-scan
+Installing eddyy-skill-orchestrator ...
+  [ok] /tmp/demo
+Done. Installed into 1 location(s).
+
+$ python3 scripts/scan_inventory.py --classify "render a paid Kling video then publish to YouTube"
+{
+  "candidate_tiers": [
+    "L4",
+    "L5"
+  ],
+  "is_multi_tier_or_composite": true,
+  "default_gate": "high_risk_confirm",
+  "cost_sensitive": true,
+  "external_mutation_risk": true,
+  "needs_probe": false,
+  "read_only_declared": false,
+  "evidence": {
+    "risk": [
+      "publish",
+      "platform+publish"
+    ],
+    "cost": [
+      "paid",
+      "kling"
+    ]
+  }
+}
+
+$ python3 scripts/validate_pipeline.py assets/example-pipeline.json
+[L0-Validator] PASSED: '30s cyberpunk detective trailer' (Entry: L1)
