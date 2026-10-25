@@ -26,6 +26,10 @@ bash install.sh --target /path/to/your/skills --no-scan  # or install into an ex
 
 Or copy manually: `cp -r eddyy-skill-orchestrator ~/.claude/skills/` (or your agent's skills dir). `SKILL.md` alone is enough; `scripts/` adds the validator, checkpoint tool and scanner. Upgrading with `install.sh` never deletes: the previous install is kept as `eddyy-skill-orchestrator.old-<timestamp>`. Details in [Install](#install-安装).
 
+## What's new in 0.5.1
+
+Skill inventory scan now follows directory symlinks (and safely skips symlink loops), so symlink-based custom-skills installs are discovered instead of returning an empty list.
+
 ## What's new in 0.5.0
 
 - **Configured vs. Verified Tool Status**: Tool entries clearly distinguish between mere presence (`configured`), tested readiness (`verified` via live probe/call or `--verified`), and missing commands (`unavailable`). Paid and high-risk operations prioritize verified tools.

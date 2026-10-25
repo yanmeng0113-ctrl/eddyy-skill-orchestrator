@@ -158,6 +158,47 @@ class TestFrontmatter(unittest.TestCase):
         self.assertEqual(found[0]["default_gate"], "high_risk_confirm")
 
 
+    def test_scan_skills_follows_symlinked_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            real = tmp_path / "real-skills" / "alpha"
+            real.mkdir(parents=True)
+            (real / "SKILL.md").write_text(
+                "---\nname: alpha\ndescription: A demo skill\n---\nbody\n", encoding="utf-8")
+            link_root = tmp_path / "custom-skills"
+            link_root.symlink_to(tmp_path / "real-skills")
+            found = scan_skills([link_root])
+        self.assertEqual([s["name"] for s in found], ["alpha"])
+
+    def test_scan_skills_dedupes_two_symlinks_to_same_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            real = tmp_path / "real" / "beta"
+            real.mkdir(parents=True)
+            (real / "SKILL.md").write_text(
+                "---\nname: beta\ndescription: Shared skill\n---\nbody\n", encoding="utf-8")
+            a = tmp_path / "link-a"
+            b = tmp_path / "link-b"
+            a.symlink_to(tmp_path / "real")
+            b.symlink_to(tmp_path / "real")
+            found = scan_skills([a, b])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["name"], "beta")
+
+    def test_scan_skills_symlink_loop_does_not_hang(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            root = tmp_path / "loop-root"
+            root.mkdir()
+            skill = root / "gamma"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text(
+                "---\nname: gamma\ndescription: Loop safe skill\n---\nbody\n", encoding="utf-8")
+            (root / "cycle").symlink_to(root)
+            found = scan_skills([root])
+        self.assertEqual([s["name"] for s in found], ["gamma"])
+
+
 class TestMcpConfigs(unittest.TestCase):
     def _scan(self, data: dict):
         with tempfile.TemporaryDirectory() as tmp:

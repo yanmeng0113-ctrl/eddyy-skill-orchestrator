@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+Skill scanner follows directory symlinks (common custom-skills installs), de-duplicates by resolved path, and refuses to hang on symlink loops. Adds three regression tests.
+
 ## 0.5.0
 
 Node-level DAG checkpoints, verified tool status, fallback switching, and real artifact delivery acceptance.
