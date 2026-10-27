@@ -7,6 +7,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B_stdlib_only-yellow)](#running-the-tests-and-scripts)
+[![M8ven Score](https://m8ven.ai/badge/mcp/yanmeng0113-ctrl/eddyy-skill-orchestrator)](https://m8ven.ai/mcp/yanmeng0113-ctrl/eddyy-skill-orchestrator?s=readme)
 
 **A planning layer for agents that have many Skills and MCP tools: order the work, lock what must stay consistent, and pause only where money or irreversible effects are involved. | 面向多 Skill / MCP 场景的总控调度层：排好执行顺序、锁定需要保持一致的锚点，只在涉及花钱或不可逆操作时才暂停确认。**
 
