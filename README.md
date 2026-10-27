@@ -65,6 +65,13 @@ What you get next: the agent prints a **route card** before tools run (see the i
 
 Prefer a zip? Grab the latest release asset and copy the folder into your skills dir — no git required.
 
+## What's new in 0.6.1
+
+- **Four new domains** in the cross-domain matrix — real-estate marketing, e-commerce & livestream, game development, education & courses — each with its anchors, high-risk actions and routing rules against the existing six.
+- **Evidence, hardened by team review**: source and acceptance are now separate axes, unknown outcomes reconcile against the authoritative status before any rollback or retry, and change sets are redacted by rule (no credential values in messages, diffs, logs or checkpoints).
+
+Earlier "What's new" sections are history; **0.6.1 is the current version**. The main branch, the latest tagged Release package and what is deployed in any given environment are separate states — verify each on its own before relying on it.
+
 ## What's new in 0.6.0
 
 - **Evidence labels on every result** — `observed` / `reported` / `inferred`. Tiers feeding delivery need `observed`; a tool's or subagent's "done" stays `reported` until the artifact itself is inspected.
@@ -102,9 +109,9 @@ Request ─► route card ─► L1 plan ─► L2a anchors ─► L2b derived �
 
 | Gate | When | Behaviour |
 | :-- | :-- | :-- |
-| `auto` | Reversible and internal: reads, drafts, local renders, feature-branch writes | Proceed |
+| `auto` | Reversible and internal, within the user's current authorization and access scope: reads, drafts, local renders, local files and local-branch edits | Proceed |
 | `cost_confirm` | Spends money or paid quota | Ask with the exact estimate, unless the cumulative estimate fits the budget the user pre-approved |
-| `high_risk_confirm` | Irreversible or externally visible: publish, send, deploy, merge to default branch, delete, pay | Always ask |
+| `high_risk_confirm` | Irreversible or externally visible: publish, send, deploy, any remote push (any branch), merge to the default branch, delete, pay | Always ask |
 
 ## Safety model (安全边界)
 

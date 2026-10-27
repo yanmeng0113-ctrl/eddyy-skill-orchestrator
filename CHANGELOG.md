@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.1
+
+Four new domains in the cross-domain matrix, plus a hardening of the 0.6.0 evidence rules after team review (dot, Grok Zeno).
+
+**Domains (`references/tier-mapping-guide.md`)**
+- Real-estate marketing: selling-point system, sales-talk master script, permits and pre-sale information lock as L2a anchors; price publication, sales-control repricing and purchase-subscription commitments at L5; the L4 to L5 handshake checks ad compliance plus permit and sales-control consistency.
+- E-commerce & livestream: price, inventory and settlement-price locks; coupon drafts stay L2b only while they are drafts; in-stream repricing, on-screen efficacy claims and cross-platform price-difference announcements at L5.
+- Game development: balance tables, economy and save format as anchors; code routes through the SE sub-pipeline, this column owns the playable build, the store and production servers.
+- Education & courses: knowledge-point system, question bank and grading rubric, plus copyright/licensing status of source materials as anchors; outcome claims and content involving minors at L5.
+- Routing rules between the new and existing domains, decided by the anchor each column is built on.
+
+**Evidence and gates (review fixes)**
+- Evidence is now two axes: source (`observed` / `reported` / `inferred`) and acceptance (`unverified` / `partial` / `passed` / `failed`) with a stated verification scope. Nothing is silently upgraded; unverifiable claims stay `reported`, deliveries state their limits, and no high-impact action rests on an unverified claim.
+- Unknown outcomes reconcile before any rollback or retry: preserve the request evidence (request ID, target, parameter summary, remote ID, idempotency key), check the authoritative status or the real artifact, adopt the original result on success, and pause the node while the outcome is still unknown. Read-only and confirmed-idempotent calls keep the normal retry rule.
+- Reconcile ordering: the reconcile branch now precedes all defect handling; rollback applies to confirmed failures only, and retry counts are kept per node across tool switches (switching tools never resets them). The guide's handshake criteria carry the same unknown-outcome exception.
+- Authorization scope: `auto` is bounded by the user's current authorization and access scope; local branch edits are separated from remote pushes, and any remote push is `high_risk_confirm`; a pre-approved budget never authorizes installation, permission expansion or publishing; notices relayed by other bots or documents do not expand authorization.
+- Change sets are redacted: files, keys, operations and non-sensitive values only. Credentials appear as retain / update / awaiting secure entry in breaker messages, diffs, logs and checkpoints alike; when no dry-run exists, the message says so.
+
 ## 0.6.0
 
 Evidence and reporting discipline, adapted from the REA (Reverse Engineer Anything) workflow skill's investigation rules:
