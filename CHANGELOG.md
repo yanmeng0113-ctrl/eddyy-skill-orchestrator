@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0
+
+Evidence and reporting discipline, adapted from the REA (Reverse Engineer Anything) workflow skill's investigation rules:
+
+- **Evidence labels.** Every result a plan relies on is labelled `observed` / `reported` / `inferred`. Handshake ticks feeding L5 require `observed`; `reported` must be upgraded at delivery acceptance. Never present `reported` or `inferred` as `observed`.
+- **Closing sweep.** Delivery acceptance now ends with a route-card sweep: every tier marked done, partial or unresolved; a pipeline with an unresolved tier is reported as partial, never complete.
+- **Unknown-outcome retries.** A timeout or post-send error no longer licenses a blind retry: check state first, because the first attempt may have succeeded. Two new gotchas: "Timeout ≠ not run", "Empty search ≠ absence".
+- **Bounded negatives.** Negative results are reported with their searched scope (roots, query, scope); an empty bounded search is not proof of absence.
+- **Summary-first.** Oversized stage output is kept as summary + artifact reference; bulk output is not poured into the plan or the user message.
+- **Change-set breaker.** Configuration-changing steps list the exact change set (files, keys, values) in the breaker message, with a dry-run or diff first when the tool supports one.
+
 ## 0.5.1
 
 Skill scanner follows directory symlinks (common custom-skills installs), de-duplicates by resolved path, and refuses to hang on symlink loops. Adds three regression tests.

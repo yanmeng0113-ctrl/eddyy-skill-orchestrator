@@ -65,6 +65,13 @@ What you get next: the agent prints a **route card** before tools run (see the i
 
 Prefer a zip? Grab the latest release asset and copy the folder into your skills dir — no git required.
 
+## What's new in 0.6.0
+
+- **Evidence labels on every result** — `observed` / `reported` / `inferred`. Tiers feeding delivery need `observed`; a tool's or subagent's "done" stays `reported` until the artifact itself is inspected.
+- **Closing sweep before "done"** — every tier is marked done, partial or unresolved; a pipeline with an unresolved tier is reported as partial, never complete.
+- **No blind retries** — a timeout does not prove a step did not run; check state before repeating anything, above all a publish, send or payment.
+- **Bounded negatives, change-set breakers** — "not found" states the searched scope; configuration changes list the exact change set, dry-run first when supported.
+
 ## What's new in 0.5.1
 
 Skill inventory scan now follows directory symlinks (and safely skips symlink loops), so symlink-based custom-skills installs are discovered instead of returning an empty list.

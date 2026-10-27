@@ -32,9 +32,19 @@ A tier is the *role* a step plays in the current task, not a fixed property of a
 2. **Entry point.** Mark upstream outputs the user already supplied as satisfied and start at the first open tier. If `.l0-state.json` exists, run `python3 scripts/checkpoint_state.py show --brief` and resume from it.
 3. **Route card.** Print it before the first tool call (template below) with the total estimated cost. The route card must flag tools not verified; paid/high-risk steps prefer verified tools. The user may pre-approve a budget at any time; without one you ask at the first paid step. Only a budget the user actually stated counts. If a tier has no suitable tool: do it yourself with native abilities, skip it when optional, or ask once. Never invent a tool. For large or costly plans, write the plan as JSON (`assets/pipeline-schema.json`, example in `assets/example-pipeline.json`) and run `python3 scripts/validate_pipeline.py plan.json` first.
 4. **Run L1 to L4 without asking "continue?"** on safe steps. When L2a finishes, record the anchors (`checkpoint_state.py lock`) and pass them verbatim into every L2b/L3 call. After each tier, check its output against the L1 blueprint (criteria in the reference, "Handshake").
-5. **On a defect**, roll back only the faulty node (`checkpoint_state.py rerun --id X`), adjust, and re-run just that branch. Touch L1 only if the requirements changed. At most 2 retries per node; after 2 retries switch to fallback tool (`checkpoint_state.py next-tool`), and stop to confirm immediately if it would exceed authorization or budget (`checkpoint_state.py budget`). After retry limit, stop and tell the user what failed and what you tried.
-6. **Delivery acceptance.** Check the real artifacts meet L1 requirements — a successful tool call is not task completion.
+5. **On a defect**, roll back only the faulty node (`checkpoint_state.py rerun --id X`), adjust, and re-run just that branch. Touch L1 only if the requirements changed. At most 2 retries per node; after 2 retries switch to fallback tool (`checkpoint_state.py next-tool`), and stop to confirm immediately if it would exceed authorization or budget (`checkpoint_state.py budget`). After retry limit, stop and tell the user what failed and what you tried. A timeout or an error after a call was sent does not prove the step did not run: before retrying any step with external effects, check its state first (`checkpoint_state.py show`, the tool's own status, or the produced artifact), because the first attempt may already have succeeded. Never repeat an unchanged call whose outcome is unknown — re-check, then decide.
+6. **Delivery acceptance.** Check the real artifacts meet L1 requirements — a successful tool call is not task completion. Before declaring the pipeline done, sweep the route card once more: every tier is marked done, partial or unresolved, and every unresolved item is named in the final message with its evidence status (below). A pipeline with an unresolved tier is reported as partial, never as complete.
 7. **Gates.** Apply the table below before every action.
+
+## Evidence discipline
+
+Label every result the plan relies on, and keep the label attached when you report it:
+
+- `observed` — you inspected the artifact or output yourself.
+- `reported` — a tool or subagent claims it; not yet inspected.
+- `inferred` — deduced from indirect signals.
+
+A handshake tick for a tier feeding L5 needs `observed`; mid-pipeline, `reported` is enough to proceed, but it must be upgraded to `observed` at delivery acceptance. Never present `reported` or `inferred` as `observed`; if a check could not be performed, say which one and why. Bound every negative result: report what was actually searched (roots, query, scope) next to "not found" — an empty result inside a bounded search is not proof of absence outside it. Work summary-first: when a stage returns more output than the next decision needs, keep the summary plus the artifact reference (checkpoint path, result file) and drill in only on a specific question; do not pour bulk output into the plan or the user message.
 
 ## Gates (熔断)
 
@@ -48,7 +58,7 @@ Decide per action, by what it does, not by the tier it sits in.
 
 - A tool that is verifiably read-only is `auto`, even when its server also exposes paid or destructive tools.
 - Costs and gates inside a nested pipeline bubble up to its parent tier.
-- Breaker message: completed tiers, the next action, exact cost or impact, one go/no-go question. Save state first (`checkpoint_state.py complete-tier ... --status awaiting_confirmation`); after the answer run `checkpoint_state.py confirm`.
+- Breaker message: completed tiers, the next action, exact cost or impact, one go/no-go question. For a configuration change, the breaker message lists the exact change set (files, keys, values) before anything is written, and a dry-run or diff is produced first when the tool supports one. Save state first (`checkpoint_state.py complete-tier ... --status awaiting_confirmation`); after the answer run `checkpoint_state.py confirm`.
 
 ## Route card
 
@@ -74,6 +84,8 @@ Tick `[x]` as tiers pass their handshake. Drop rows the task does not need.
 - **Composite MCP blanket label**: split a studio or CRUD server across tiers by action.
 - **L2 race**: never start L2b while L2a has not locked the identity.
 - **Scanner output is a hint**: it keyword-matches names and descriptions. `probe_required` means "inspect this tool", not "safe".
+- **Timeout ≠ not run**: a step that timed out may have completed. Verify state before any retry — above all before repeating a publish, send or payment.
+- **Empty search ≠ absence**: state the searched scope with the negative result; "not in these roots" is all a scan can honestly claim.
 - **Over-orchestrating**: a route card for a two-step task is noise; use light mode.
 
 ## Resources
