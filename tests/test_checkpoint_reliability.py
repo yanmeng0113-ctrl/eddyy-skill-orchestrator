@@ -66,7 +66,8 @@ class NestedTierRecoveryTests(CheckpointCliCase):
         artifacts: dict[str, Path] = {}
         for tier in ("L3.1", "L3.2", "L3.2a", "L3.2b", "L3.10", "L4"):
             artifact = self.work / f"{tier}.artifact"
-            artifact.write_text(f"real output {tier}\n", encoding="utf-8", newline="")
+            with artifact.open("w", encoding="utf-8", newline="") as stream:
+                stream.write(f"real output {tier}\n")
             artifacts[tier] = artifact
         self.ok("init", "--scope", "nested numeric ordering", "--entry", "L3")
         for tier, artifact in artifacts.items():
@@ -177,7 +178,8 @@ class BudgetFieldValidationTests(CheckpointCliCase):
                         data["approved_budget_usd"] = 100
                         data["spent_usd"] = 0
                         data[field] = value
-                    state_path.write_text(json.dumps(data, allow_nan=True), encoding="utf-8", newline="")
+                    with state_path.open("w", encoding="utf-8", newline="") as stream:
+                        stream.write(json.dumps(data, allow_nan=True))
                     before = state_path.read_bytes()
                     result = self.cli("budget", "--next-cost", "0", state_path=state_path)
                     self.assertNotEqual(result.returncode, 0, result.stdout)
@@ -192,7 +194,8 @@ class BudgetFieldValidationTests(CheckpointCliCase):
             {"scope": "missing legacy approval", "budget": {"spent": 0}},
         ):
             state_path = self.work / f"missing-{len(list(self.work.glob('missing-*.json')))}.json"
-            state_path.write_text(json.dumps(data), encoding="utf-8", newline="")
+            with state_path.open("w", encoding="utf-8", newline="") as stream:
+                stream.write(json.dumps(data))
             result = self.cli("budget", state_path=state_path)
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertNotIn("Budget ok", result.stdout)
