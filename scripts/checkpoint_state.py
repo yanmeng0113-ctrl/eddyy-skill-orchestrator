@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -59,6 +60,109 @@ def _base(tier: str) -> int:
     return BASE_ORDER[tier.split(".")[0]]
 
 
+def _tier_sort_key(tier: str) -> tuple[int, int, tuple[tuple[int, int], ...], str]:
+    """Sort stage ids by their declared top-level order and numeric nested parts."""
+    base, *nested = tier.split(".")
+    base_order = BASE_ORDER.get(base, 99)
+    parts: list[tuple[int, int]] = []
+    for part in nested:
+        match = re.fullmatch(r"(\d+)([ab]?)", part)
+        if not match:
+            return (base_order, 1, (), tier)
+        suffix_order = {"": 0, "a": 1, "b": 2}[match.group(2)]
+        parts.append((int(match.group(1)), suffix_order))
+    return (base_order, 0, tuple(parts), tier)
+
+
+def _is_tier_id(value: object) -> bool:
+    return isinstance(value, str) and TIER_RE.fullmatch(value) is not None
+
+
+def _downstream_nodes(nodes: dict, seeds: set[str]) -> set[str]:
+    downstream = set(seeds)
+    changed = True
+    while changed:
+        changed = False
+        for node_id, info in nodes.items():
+            if node_id not in downstream and any(dep in downstream for dep in info.get("depends_on", [])):
+                downstream.add(node_id)
+                changed = True
+    return downstream
+
+
+def _record_tier_completion(state: dict, tier: str, artifacts: list[str]) -> None:
+    state["completed_tiers"][tier] = {
+        "output": artifacts[-1] if artifacts else "",
+        "timestamp": _now(),
+    }
+
+
+def _refresh_recovery_position(state: dict, status_after: str = "in_progress") -> None:
+    recovery = state.get("recovery")
+    if not isinstance(recovery, dict):
+        return
+    nodes = state["nodes"]
+    affected = [
+        node_id for node_id in recovery.get("nodes", [])
+        if node_id in nodes and nodes[node_id].get("status") == "needs_rerun"
+    ]
+    ready = [
+        node_id for node_id in affected
+        if all(nodes.get(dep, {}).get("status") == "completed" for dep in nodes[node_id].get("depends_on", []))
+    ]
+    if not affected:
+        state["current_tier"] = recovery.get("resume_tier", state["current_tier"])
+        state.pop("current_node", None)
+        state["status"] = status_after
+        state.pop("recovery", None)
+        return
+    if ready:
+        ready.sort(key=lambda node_id: (
+            0 if _is_tier_id(nodes[node_id].get("tier_id")) else 1,
+            _tier_sort_key(nodes[node_id]["tier_id"]) if _is_tier_id(nodes[node_id].get("tier_id")) else (99, 1, (), node_id),
+            node_id,
+        ))
+        next_node = ready[0]
+        tier_id = nodes[next_node].get("tier_id")
+        if _is_tier_id(tier_id):
+            state["current_tier"] = tier_id
+            state.pop("current_node", None)
+        else:
+            state["current_node"] = next_node
+    else:
+        next_node = sorted(affected)[0]
+        tier_id = nodes[next_node].get("tier_id")
+        if _is_tier_id(tier_id):
+            state["current_tier"] = tier_id
+            state.pop("current_node", None)
+        else:
+            state["current_node"] = next_node
+    state["status"] = status_after
+
+
+def _validated_money(value: object, label: str) -> float:
+    if isinstance(value, bool):
+        raise StateError(f"{label} must be a finite, non-negative number")
+    try:
+        amount = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise StateError(f"{label} must be a finite, non-negative number") from None
+    if not math.isfinite(amount) or amount < 0:
+        raise StateError(f"{label} must be a finite, non-negative number")
+    return amount
+
+
+def _state_budget_value(state: dict, current_key: str, legacy_key: str, label: str) -> float:
+    if current_key in state:
+        value = state[current_key]
+    else:
+        legacy = state.get("budget")
+        if not isinstance(legacy, dict) or legacy_key not in legacy:
+            raise StateError(f"{label} is missing from state; supply it explicitly")
+        value = legacy[legacy_key]
+    return _validated_money(value, label)
+
+
 def _check_tier(tier: str) -> str:
     if not TIER_RE.match(tier):
         raise StateError(f"invalid tier '{tier}': expected L1, L2a, L2b, L3, L4, L5 "
@@ -86,7 +190,9 @@ def load_state(path: Path) -> dict:
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(state, dict) or not isinstance(state.get("locked_anchors", {}), dict) \
-                or not isinstance(state.get("completed_tiers", {}), dict):
+                or not isinstance(state.get("completed_tiers", {}), dict) \
+                or not isinstance(state.get("nodes", {}), dict) \
+                or any(not isinstance(node, dict) for node in state.get("nodes", {}).values()):
             raise ValueError("unexpected structure")
     except (OSError, ValueError) as exc:
         try:
@@ -110,24 +216,25 @@ def load_state(path: Path) -> dict:
     state.setdefault("max_retries", 2)
     state.setdefault("confirmations", [])
     state.setdefault("nodes", {})
-    state.setdefault("approved_budget_usd", 0.0)
-    state.setdefault("spent_usd", 0.0)
 
-    # Migrate old tier-based files (schema_version 1/2 with completed_tiers):
-    # node id = tier name, status completed, artifacts=[output], depends_on = previous tier by order
+    # Migrate explicit completed-stage references. A stale reference paired with
+    # a non-completed node is removed, never used to revive that node.
     if state["completed_tiers"]:
         sorted_tiers = sorted(
             state["completed_tiers"].keys(),
-            key=lambda t: (BASE_ORDER.get(t.split(".")[0], 99), t),
+            key=_tier_sort_key,
         )
         prev_t = None
         for t in sorted_tiers:
+            if not _is_tier_id(t):
+                continue
             t_info = state["completed_tiers"][t]
             output = t_info.get("output") if isinstance(t_info, dict) else None
             artifacts = [output] if output else []
             depends_on = [prev_t] if prev_t else []
             if t not in state["nodes"]:
                 state["nodes"][t] = {
+                    "tier_id": t,
                     "status": "completed",
                     "artifacts": artifacts,
                     "depends_on": depends_on,
@@ -136,9 +243,31 @@ def load_state(path: Path) -> dict:
                 }
             else:
                 node = state["nodes"][t]
+                if not isinstance(node, dict):
+                    raise StateError(f"state file {path} has an invalid node record for {t}", EXIT_CORRUPT)
+                node.setdefault("tier_id", t)
                 if node.get("status") == "completed" and not node.get("artifacts") and artifacts:
                     node["artifacts"] = artifacts
-            prev_t = t
+                elif node.get("status") != "completed":
+                    state["completed_tiers"].pop(t, None)
+            if t in state["completed_tiers"]:
+                prev_t = t
+
+    # Keep stage references aligned with explicit tier metadata and node status.
+    for node_id, node in state["nodes"].items():
+        if not isinstance(node, dict):
+            raise StateError(f"state file {path} has an invalid node record for {node_id}", EXIT_CORRUPT)
+        tier_id = node.get("tier_id")
+        if not _is_tier_id(tier_id):
+            continue
+        if node.get("status") == "completed":
+            artifacts = node.get("artifacts", [])
+            state["completed_tiers"].setdefault(
+                tier_id,
+                {"output": artifacts[-1] if artifacts else "", "timestamp": _now()},
+            )
+        else:
+            state["completed_tiers"].pop(tier_id, None)
 
     return state
 
@@ -181,7 +310,7 @@ def cmd_init(path: Path, args: argparse.Namespace) -> None:
         "scope": args.scope, "entry_tier": args.entry, "current_tier": args.entry,
         "status": "in_progress", "locked_anchors": {}, "completed_tiers": {},
         "retries": {}, "max_retries": args.max_retries, "confirmations": [],
-        "nodes": {}, "approved_budget_usd": 0.0, "spent_usd": 0.0,
+        "nodes": {},
     }
     save_state(path, state)
     print(f"[L0-State] Initialized pipeline '{args.scope}' at {args.entry} -> {path}")
@@ -208,13 +337,14 @@ def cmd_complete(path: Path, args: argparse.Namespace) -> None:
         state["current_tier"] = args.next_tier
     state["status"] = args.status
     sorted_tiers = sorted(
-        state["completed_tiers"].keys(),
-        key=lambda t: (BASE_ORDER.get(t.split(".")[0], 99), t),
+        (t for t in state["completed_tiers"] if _is_tier_id(t)),
+        key=_tier_sort_key,
     )
     idx = sorted_tiers.index(tier)
     prev_tier = sorted_tiers[idx - 1] if idx > 0 else None
     if tier not in state["nodes"]:
         state["nodes"][tier] = {
+            "tier_id": tier,
             "status": "completed",
             "artifacts": [args.output] if args.output else [],
             "depends_on": [prev_tier] if prev_tier else [],
@@ -223,11 +353,17 @@ def cmd_complete(path: Path, args: argparse.Namespace) -> None:
         }
     else:
         node = state["nodes"][tier]
+        node["tier_id"] = tier
         node["status"] = "completed"
+        node.setdefault("artifacts", [])
         if args.output and args.output not in node["artifacts"]:
             node["artifacts"].append(args.output)
+        node.setdefault("depends_on", [])
         if prev_tier and prev_tier not in node["depends_on"]:
             node["depends_on"].append(prev_tier)
+    _record_tier_completion(state, tier, state["nodes"][tier].get("artifacts", []))
+    if state.get("recovery"):
+        _refresh_recovery_position(state, status_after=args.status)
     save_state(path, state)
     print(f"[L0-State] Tier {tier} marked complete. Current tier: {state['current_tier']} ({state['status']})")
 
@@ -255,12 +391,43 @@ def cmd_rollback(path: Path, args: argparse.Namespace) -> None:
         raise StateError(f"retry limit reached for {target} ({used}/{state['max_retries']}). "
                          "Stop and escalate to the user with what failed and what was tried.", EXIT_RETRY)
     state["retries"][target] = used + 1
+    resume_tier = state["current_tier"]
+    target_key = _tier_sort_key(target)
+    stage_tiers = {
+        tier for tier in state["completed_tiers"]
+        if _is_tier_id(tier) and _tier_sort_key(tier) >= target_key
+    }
+    stage_tiers.update(
+        node.get("tier_id") for node in state["nodes"].values()
+        if _is_tier_id(node.get("tier_id")) and _tier_sort_key(node["tier_id"]) >= target_key
+    )
+    seeds = {
+        node_id for node_id, node in state["nodes"].items()
+        if node.get("tier_id") in stage_tiers
+    }
+    affected = _downstream_nodes(state["nodes"], seeds)
+    for node_id in affected:
+        node = state["nodes"][node_id]
+        if node_id in seeds or node.get("status") in ("completed", "in_progress", "failed", "needs_rerun"):
+            node["status"] = "needs_rerun"
+        node["artifacts"] = []
     for done in list(state["completed_tiers"]):
-        if _base(done) >= _base(target):
+        if (_is_tier_id(done) and _tier_sort_key(done) >= target_key) or any(
+            state["nodes"].get(node_id, {}).get("tier_id") == done for node_id in affected
+        ):
             del state["completed_tiers"][done]
     state["current_tier"] = target
+    state.pop("current_node", None)
     state["status"] = "rolled_back"
-    state["last_rollback"] = {"to": target, "reason": args.reason or "", "timestamp": _now()}
+    state["last_rollback"] = {
+        "to": target, "reason": args.reason or "", "timestamp": _now(),
+        "invalidated_nodes": sorted(affected), "invalidated_tiers": sorted(stage_tiers, key=_tier_sort_key),
+    }
+    state["recovery"] = {
+        "kind": "stage", "target": target, "nodes": sorted(
+            node_id for node_id in affected if state["nodes"][node_id].get("status") == "needs_rerun"
+        ), "resume_tier": resume_tier,
+    }
     save_state(path, state)
     msg = f"[L0-State] Rolled back to {target} (retry {used + 1}/{state['max_retries']})."
     if _base(target) <= BASE_ORDER["L2a"] and state["locked_anchors"]:
@@ -273,17 +440,20 @@ def cmd_show(path: Path, args: argparse.Namespace) -> None:
     if not args.brief:
         print(json.dumps(state, indent=2, ensure_ascii=False))
         return
-    done = ", ".join(state["completed_tiers"]) or "none"
+    done = ", ".join(sorted(state["completed_tiers"], key=_tier_sort_key)) or "none"
+    position = state.get("current_node") or state["current_tier"]
     anchors = ", ".join(f"{k}={v}" for k, v in state["locked_anchors"].items()) or "none"
     print(f"Scope: {state['scope']}")
-    print(f"Position: {state['current_tier']} ({state['status']})")
+    print(f"Position: {position} ({state['status']})")
     print(f"Completed: {done}")
     print(f"Locked anchors: {anchors}")
     print(f"Retries: {state['retries'] or 'none'} (limit {state['max_retries']} per tier)")
     if state.get("nodes"):
         nodes_summary = ", ".join(f"{k}:{v.get('status')}" for k, v in state["nodes"].items())
         print(f"Nodes: {nodes_summary}")
-    if state["status"] == "awaiting_confirmation":
+    if state.get("current_node"):
+        print(f"NEXT: re-run node {state['current_node']}.")
+    elif state["status"] == "awaiting_confirmation":
         print(f"NEXT: ask the user for go/no-go before {state['current_tier']}, then run `confirm`.")
     elif state["status"] == "escalated":
         print("NEXT: retry limit hit. Report to the user; do not continue automatically.")
@@ -331,11 +501,17 @@ def cmd_node_complete(path: Path, args: argparse.Namespace) -> None:
         }
     node = state["nodes"][node_id]
     node["status"] = "completed"
+    node.setdefault("artifacts", [])
     for art in args.artifact:
         for p in art.split(","):
             p = p.strip()
             if p and p not in node["artifacts"]:
                 node["artifacts"].append(p)
+    tier_id = node.get("tier_id")
+    if _is_tier_id(tier_id):
+        _record_tier_completion(state, tier_id, node["artifacts"])
+    if state.get("recovery") and node_id in state["recovery"].get("nodes", []):
+        _refresh_recovery_position(state)
     save_state(path, state)
     print(f"[L0-State] Node '{node_id}' completed. Artifacts: {node['artifacts']}")
 
@@ -373,26 +549,38 @@ def cmd_rerun(path: Path, args: argparse.Namespace) -> None:
         )
     state["retries"][node_id] = used + 1
 
-    downstream = {node_id}
-    changed = True
-    while changed:
-        changed = False
-        for nid, ninfo in state["nodes"].items():
-            if nid not in downstream:
-                if any(d in downstream for d in ninfo.get("depends_on", [])):
-                    downstream.add(nid)
-                    changed = True
+    downstream = _downstream_nodes(state["nodes"], {node_id})
 
     for nid in downstream:
         state["nodes"][nid]["status"] = "needs_rerun"
         state["nodes"][nid]["artifacts"] = []
 
+    for tier in list(state["completed_tiers"]):
+        if any(state["nodes"].get(nid, {}).get("tier_id") == tier for nid in downstream):
+            del state["completed_tiers"][tier]
+
+    resume_tier = state["current_tier"]
+    node_tier = state["nodes"][node_id].get("tier_id")
+    state.pop("current_node", None)
+    if _is_tier_id(node_tier):
+        state["current_tier"] = node_tier
+    else:
+        state["current_node"] = node_id
     state["status"] = "rolled_back"
+    affected_tiers = sorted(
+        {state["nodes"][nid].get("tier_id") for nid in downstream if _is_tier_id(state["nodes"][nid].get("tier_id"))},
+        key=_tier_sort_key,
+    )
     state["last_rerun"] = {
         "id": node_id,
         "reason": args.reason or "",
         "timestamp": _now(),
         "downstream": sorted(downstream),
+        "invalidated_tiers": affected_tiers,
+    }
+    state["recovery"] = {
+        "kind": "node", "target": node_id, "nodes": sorted(downstream),
+        "resume_tier": resume_tier,
     }
     save_state(path, state)
     print(
@@ -430,28 +618,33 @@ def cmd_next_tool(path: Path, args: argparse.Namespace) -> None:
 
 def cmd_budget(path: Path, args: argparse.Namespace) -> None:
     state = None
-    if path.exists():
-        try:
-            state = load_state(path)
-        except StateError:
-            pass
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise StateError(f"state file {path} is inaccessible ({exc})", EXIT_CORRUPT) from None
+    else:
+        state = load_state(path)
 
-    approved = args.approved
-    if approved is None:
-        if state is not None:
-            approved = float(state.get("approved_budget_usd") or (state.get("budget") or {}).get("approved", 0.0))
-        else:
-            approved = 0.0
+    if args.approved is not None:
+        approved = _validated_money(args.approved, "approved budget")
+    elif state is not None:
+        approved = _state_budget_value(state, "approved_budget_usd", "approved", "approved budget")
+    else:
+        raise StateError("approved budget is unknown; supply --approved or configure it in state")
 
-    spent = args.spent
-    if spent is None:
-        if state is not None:
-            spent = float(state.get("spent_usd") or (state.get("budget") or {}).get("spent", 0.0))
-        else:
-            spent = 0.0
+    if args.spent is not None:
+        spent = _validated_money(args.spent, "historical spend")
+    elif state is not None:
+        spent = _state_budget_value(state, "spent_usd", "spent", "historical spend")
+    else:
+        raise StateError("historical spend is unknown; supply --spent or record it in state")
 
-    next_cost = float(args.next_cost if args.next_cost is not None else 0.0)
+    next_cost = _validated_money(args.next_cost if args.next_cost is not None else 0.0, "next cost")
     total = spent + next_cost
+    if not math.isfinite(total):
+        raise StateError("historical spend plus next cost is not finite; stop and confirm")
 
     if total > approved:
         raise StateError(
