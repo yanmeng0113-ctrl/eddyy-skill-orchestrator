@@ -197,9 +197,15 @@ _COST_STRONG_EN = _en([
     "heygen", "synthesia", r"eleven ?labs", "midjourney", r"veo\d*",
     "generate video", "video generation", "text to video", "image to video",
     "txt2video", "img2video",
+    r"credit\s+card", r"debit\s+card", r"(?:buy|purchase)\s+(?:ads?|advertis\w*)", r"ad\s+spend",
+    "usd", "dollars?",
 ])
 _COST_STRONG_ZH = _zh(["付费", "计费", "扣费", "充值", "算力", "视频生成", "图生视频",
-                       "文生视频", "按秒", "按量", "可灵", "即梦", "海螺"])
+                       "文生视频", "按秒", "按量", "可灵", "即梦", "海螺",
+                       # Spending money: cards, ad buys, explicit currency amounts.
+                       "信用卡", "借记卡", "美元", "美金", "买广告", "购买广告", "广告费", "投放预算",
+                       r"(?:US)?\$\s*\d", r"\d\s*(?:元|块钱|美元|美金|USD|RMB)",
+                       r"(?:花|付|支付|消费)\s*\d"])
 _COST_HINT_EN = _en(["credit", "subscription", r"account\s+balance", r"credit\s+balance"])
 _COST_HINT_ZH = _zh(["额度", "账户余额"])
 

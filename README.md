@@ -65,12 +65,17 @@ What you get next: the agent prints a **route card** before tools run (see the i
 
 Prefer a zip? Grab the latest release asset and copy the folder into your skills dir — no git required.
 
+## What's new in 0.6.2
+
+- **Checkpoint reliability**: checkpoint recovery and budget validation fixed in `scripts/checkpoint_state.py`, with new regression tests (`tests/test_checkpoint_reliability.py`, Python 3.9 compatible).
+- **Cost classification** (on main after the 0.6.2 tag): `scan_inventory.py --classify` now marks spending money (credit/debit cards, ad buys, explicit currency amounts such as `100美元`, `$100`, `200元`) as `cost_sensitive`.
+
 ## What's new in 0.6.1
 
 - **Four new domains** in the cross-domain matrix — real-estate marketing, e-commerce & livestream, game development, education & courses — each with its anchors, high-risk actions and routing rules against the existing six.
 - **Evidence, hardened by team review**: source and acceptance are now separate axes, unknown outcomes reconcile against the authoritative status before any rollback or retry, and change sets are redacted by rule (no credential values in messages, diffs, logs or checkpoints).
 
-Earlier "What's new" sections are history; **0.6.1 is the current version**. The main branch, the latest tagged Release package and what is deployed in any given environment are separate states — verify each on its own before relying on it.
+Earlier "What's new" sections are history; **0.6.2 is the current version**. The main branch, the latest tagged Release package and what is deployed in any given environment are separate states — verify each on its own before relying on it.
 
 ## What's new in 0.6.0
 

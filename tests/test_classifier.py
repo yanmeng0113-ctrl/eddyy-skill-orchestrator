@@ -75,6 +75,17 @@ class TestFailClosed(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(classify_text(text)["default_gate"], "cost_confirm")
 
+    def test_spending_money_is_cost_sensitive(self):
+        for text in ["用信用卡买100美元广告并发布到X", "花200元购买API额度",
+                     "Buy $100 of ads with a credit card", "spend 50 USD on promoted posts"]:
+            with self.subTest(text=text):
+                self.assertTrue(classify_text(text)["cost_sensitive"], text)
+
+    def test_money_words_without_spending_not_cost(self):
+        for text in ["分析用户购买力并生成报告", "格式化 Markdown 表格", "统计 3 个视频的字数"]:
+            with self.subTest(text=text):
+                self.assertFalse(classify_text(text)["cost_sensitive"], text)
+
     def test_unknown_tool_is_not_silently_auto(self):
         for text in ["media_cloud_runner run jobs in the cloud", "test-runner run unit tests"]:
             with self.subTest(text=text):

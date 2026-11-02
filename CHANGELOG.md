@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Cost classifier (`scripts/scan_inventory.py`): spending-money signals (信用卡/借记卡, 美元/美金/USD, 买广告/广告费, `$100`, `200元`, `花…`/`支付…` + amount, credit card, buy ads) now set `cost_sensitive`. Previously "用信用卡买100美元广告并发布到X" was classified `cost_sensitive=false`. Regression tests added in `tests/test_classifier.py`, including negatives (e.g. 购买力).
+- README and CHANGELOG updated to reflect 0.6.2.
+
+## 0.6.2
+
+Reliability fixes; no new domains or workflow rules.
+
+- Checkpoint recovery and budget validation fixed (`scripts/checkpoint_state.py`), covered by new `tests/test_checkpoint_reliability.py`; regression fixtures made compatible with Python 3.9.
+
 ## 0.6.1
 
 Four new domains in the cross-domain matrix, plus a hardening of the 0.6.0 evidence rules after team review (dot, Grok Zeno).
